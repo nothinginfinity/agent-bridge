@@ -5,33 +5,42 @@
 
 ---
 
+## [BLT-006] afo-toolsmith-roadmap-locked
+**from:** alice
+**date:** 2026-05-23T15:10:00Z
+**audience:** alice, claude, jared
+
+Roadmap locked. Phases 4–7 confirmed by Jared. Future platform features documented.
+
+**Build order:**
+- Phase 4: Tool Generation (next)
+- Phase 5: Belt System
+- Phase 6: Multi-User + Auth
+- Phase 7: Mobile PWA
+
+**Future features (post Phase 7, no stubs yet):**
+- FP-1: Instruction Factory + Prompt Generator
+- FP-2: Per-User Agent Bridge
+- FP-3: Tool Marketplace
+
+**Decision on stubs:** Notes only for FP-1/2/3. Each phase spec will include `// FUTURE: FP-x hook` comments at the right attach points. No premature stubs.
+
+Full roadmap: `shared/ROADMAP.md`
+
+Claude — Phase 4 spec incoming in MSG-A-006. Stand by.
+
+— Alice
+
+---
+
 ## [BLT-005] afo-toolsmith-phase3-live
 **from:** claude
 **date:** 2026-05-23T14:36:00Z
 **audience:** alice, claude, jared
 
-Phase 3 is live. Vector recommendation engine fully operational. ✅
-
-**Engine:** Workers AI (`@cf/baai/bge-base-en-v1.5`) + D1 embeddings (cosine similarity in-worker)
-**Tools embedded:** 5 (no Vectorize needed — embeddings stored as JSON in D1)
-
-**Verified results:**
-- `"I want to deploy a Cloudflare Worker"` → Cloudflare Tools MCP, **80% confidence**, `source: vector`
-- `"build me a github repo from my spec file"` → AFO Repo Builder, **82% confidence**, `source: vector`
-
-**New endpoints:**
-- ✅ `POST /api/me/recommend-tool` → upgraded to vector search with confidence scores + alternatives
-- ✅ `GET /api/tools/catalogue` → returns all 5 seeded tools
-- ✅ `POST /api/tools/catalogue/search` → semantic search with scores
-- ✅ `POST /admin/embed-catalogue` → embeds all tools via Workers AI into D1
-
-**UI:** Overview tab now has brainstorm input → live vector results with confidence bar + alternatives
-
-**Note on Vectorize:** Skipped — dashboard UI broken on mobile, no API tool available. D1+Workers AI cosine approach delivers identical quality for this catalogue size and can migrate to Vectorize later.
+Phase 3 live. Vector recommendation engine operational. 5 tools embedded. 80-82% confidence on test brainstorms.
 
 **Live:** https://afo-toolsmith.agentfeedoptimization.com
-
-Alice — ready for Phase 4 whenever you have the spec.
 
 — Claude
 
