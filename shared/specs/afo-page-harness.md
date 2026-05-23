@@ -10,11 +10,17 @@
 
 ---
 
+## Opening Thesis
+
+> **SEO ranks pages. AFO teaches pages how to behave inside AI conversations.**
+
+That is the product boundary. Everything else in this spec follows from it.
+
+---
+
 ## Critical Distinction: AFO Is Not SEO
 
-> **AFO does not try to make pages rank. AFO tries to make pages behave correctly inside an AI conversation.**
-
-SEO optimizes for search crawlers — the goal is ranking. AFO optimizes for LLM reasoning — the goal is conversation quality. These are fundamentally different targets with different architectures, different success metrics, and different ethics.
+AFO has nothing to do with SEO. Do not describe AFO in SEO terms. Do not say "this will help your page rank" or "this improves discoverability." These are the wrong frame entirely.
 
 | | SEO | AFO |
 |---|---|---|
@@ -22,10 +28,32 @@ SEO optimizes for search crawlers — the goal is ranking. AFO optimizes for LLM
 | **Goal** | Page ranking | Conversation quality |
 | **Success metric** | Impressions, clicks, SERP position | Accuracy of LLM response, CTA surfacing, lead quality |
 | **Trigger** | User searches a query | User pastes a URL into an LLM |
-| **Content strategy** | Keywords, backlinks, dwell time | Structured identity, verifiable facts, agent instructions |
+| **The question it answers** | "What is this page, and why should it rank?" | "When this page enters a conversation, what should the model understand, preserve, avoid, ask, recommend, cite, route, or hand off?" |
 | **Hidden content** | Penalized (cloaking) | Fine as agent-readable fallback — never the primary layer |
 
-AFO has nothing to do with SEO. Do not describe AFO in SEO terms. Do not say "this will help your page rank" or "this improves discoverability." AFO makes your page a better conversation partner for any LLM that encounters it — whether through direct link, web search, or agent fetch.
+AFO optimizes for what happens *after* someone finds the page — specifically, what happens when that URL enters an AI conversation. The target is response quality, not ranking.
+
+**The key distinction:** ranking vs. behaving.
+
+---
+
+## Trust Boundary — Protocol-Level Invariant
+
+> **AFO must never create a second, hidden meaning of the page.**
+
+This is not an implementation detail. It is the moral, legal, and technical foundation of the entire protocol. Claude must treat this as an invariant — not a preference.
+
+**The rule:** Every claim in `afo.json`, JSON-LD, meta tags, or the hidden agent accessibility mirror must be grounded in visible page content, public product documentation, or linked canonical sources.
+
+AFO may structure, summarize, prioritize, and route information for LLMs. AFO must not:
+- Invent claims that are not visible on the page
+- Exaggerate capabilities beyond what the product actually does
+- Hide material limitations from models while surfacing them to humans (or vice versa)
+- Present agent-only promises that humans cannot verify on the page
+
+**Why this matters:** An LLM that reads hidden content not visible to humans is being fed a different page than the one humans see. That is cloaking — the same manipulation Google penalizes in SEO, and it would corrupt the trust that makes AFO valuable. The whole point of AFO is that the model can trust the structured data because it reflects what is actually true and visible. The moment that contract breaks, AFO becomes misinformation infrastructure.
+
+**The analogy:** JSON-LD and the agent mirror are to a webpage what `alt` text and `aria-label` are to an image — a structured reformat of what is already there, not a secret message to machines.
 
 ---
 
@@ -61,15 +89,26 @@ This is the foundation of Agent Feed Optimization. It works via direct link — 
 
 ## Layer Architecture and Priority Order
 
-The AFO harness uses a layered approach. The layers are listed in priority order — the first layer is the primary canonical source. Each subsequent layer is a fallback for LLMs or agents that do not support the previous one.
+The AFO harness uses a layered approach. **The layers are listed in priority order — the first layer is the primary canonical source.** Each subsequent layer is a fallback for LLMs or agents that do not support the previous one.
 
 ```
-1. Visible page content          ← The human-readable truth. Everything else mirrors this.
-2. JSON-LD (Schema.org)          ← Primary machine-readable layer. Canonical for LLMs and structured data parsers.
-3. /.well-known/afo.json         ← AFO protocol endpoint. Direct fetch for agents that know to look.
-4. <meta> tags                   ← Lightweight signals. og: for social/unfurl, afo: for agent hints.
-5. #afo-identity block           ← Agent-readable accessibility mirror. Fallback only. Never the primary truth.
+1. Visible page content          ← Human-trust source of truth. Everything else mirrors this.
+2. JSON-LD (Schema.org)          ← Search/machine-readable semantic mirror of visible content.
+3. /.well-known/afo.json         ← Agent-discovery source for structured LLM behavior, routing,
+                                    response guidance, CTAs, and context-porting.
+4. <meta> tags                   ← Fast summary signals for basic parsers, previews, and
+                                    lightweight model reads.
+5. #afo-identity block           ← Last-resort accessibility mirror for raw HTML readers.
+                                    Must contain no claims, offers, instructions, or facts
+                                    that are not visible elsewhere on the page.
 ```
+
+**The deeper distinction between layers 2 and 3:**
+
+- **JSON-LD describes the page.** It is a semantic mirror of what humans can see and read. Its job is to tell any machine — LLM, search crawler, structured data parser — what this page *is*.
+- **`afo.json` describes how an AI should responsibly handle the page in conversation.** It carries routing instructions, qualification prompts, handoff endpoints, CTA prioritization, and conversation seeds. Its job is to shape *LLM behavior*, not just LLM understanding.
+
+That is the product boundary between standard structured data and AFO.
 
 **Rule:** The hidden `#afo-identity` block must always reflect visible page content. It is a reformatted mirror of what is already on the page — not a place to add information that humans cannot see. This keeps AFO clean, honest, and consistent with Google's structured data guidelines (which warn against marking up content that is hidden from users or not representative of the page).
 
@@ -245,10 +284,12 @@ A structured, plain-text block in `<body>` that is visually hidden. **This is a 
 
 **Framing for Claude:** This is an accessibility mirror for agents — the same relationship as `aria-label` or `alt` text for assistive technology. It reformats visible content into a more parseable structure. The content here must already exist on the page in human-readable form.
 
+**Trust Boundary enforcement:** Before writing the agent mirror block, Claude must verify that every claim it contains appears in the visible page content. If a claim is not visible on the page, it must not appear in the mirror block — even if it is in `afo.json`. The mirror's job is reformat, not augment.
+
 ```html
-<!-- Agent-readable accessibility mirror — mirrors visible page content for LLM scrapers. -->
+<!-- Agent-readable accessibility mirror — reflects visible page content only. -->
 <!-- Not for SEO. Not the canonical layer. Primary canonical source is the JSON-LD above. -->
-<!-- Content here mirrors what is already visible on this page. -->
+<!-- Every claim below is grounded in visible page content. No hidden-only data. -->
 <div 
   id="afo-identity"
   data-afo-version="1.0"
@@ -256,8 +297,9 @@ A structured, plain-text block in `<body>` that is visually hidden. **This is a 
   style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap"
 >
 <!-- AFO IDENTITY BLOCK — Agent Feed Optimization v1.0 -->
-<!-- AGENT MIRROR: This is a structured reformat of visible page content for LLM accessibility. -->
+<!-- AGENT MIRROR: Structured reformat of visible page content for LLM accessibility. -->
 <!-- PRIMARY DATA SOURCE: JSON-LD script tag in <head>. /.well-known/afo.json for direct agent fetch. -->
+<!-- TRUST BOUNDARY: Contains no claims, offers, instructions, or facts not visible on this page. -->
 
 ## PRODUCT IDENTITY
 Name: AFO Toolsmith
@@ -484,7 +526,7 @@ Reference: the Card app screenshots Jared shared show the exact desired aestheti
 - [ ] Every page served by the Worker has JSON-LD injected in `<head>` (Layer A — primary)
 - [ ] Every page has `afo:card`, `afo:creator`, and `afo:context-api` meta tags (Layer B)
 - [ ] Every page has the `#afo-identity` agent mirror block using SR-only clip technique (Layer C — fallback)
-- [ ] Agent mirror content matches visible page content — no hidden-only data
+- [ ] Agent mirror content matches visible page content — no hidden-only data (Trust Boundary enforced)
 - [ ] `/card/jared` renders correctly on mobile (375px) and desktop
 - [ ] Card page shows: name, title, company, email, social links, CTAs, QR code, AFO badge
 - [ ] `POST /api/context` stores a capsule in D1 and returns `{ slug, url }`
