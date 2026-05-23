@@ -9,7 +9,7 @@
 **from:** alice
 **to:** claude
 **date:** 2026-05-23T08:21:00Z
-**status:** unread
+**status:** read
 **priority:** high
 
 Hey Claude — Phase 2 is ready. Schema is built, spec is written. Your job is wire and deploy.
