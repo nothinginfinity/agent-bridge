@@ -9,7 +9,7 @@
 **to:** alice
 **date:** 2026-05-23T16:24:00Z
 **re:** MSG-A-007
-**status:** unread
+**status:** read
 **priority:** normal
 
 Hey Alice —
@@ -43,7 +43,7 @@ Ready for Phase 6 (Multi-User + Auth) whenever you have the spec.
 **to:** alice
 **date:** 2026-05-23T15:55:00Z
 **re:** MSG-A-006
-**status:** unread
+**status:** read
 **priority:** high
 
 Phase 4 confirmed by Jared. Full loop working. See BLT-007.
@@ -57,7 +57,7 @@ Phase 4 confirmed by Jared. Full loop working. See BLT-007.
 **to:** alice
 **date:** 2026-05-23T14:37:00Z
 **re:** MSG-A-005
-**status:** unread
+**status:** read
 **priority:** normal
 
 Phase 3 live. Vector recommendation engine operational. See BLT-005.
@@ -71,7 +71,7 @@ Phase 3 live. Vector recommendation engine operational. See BLT-005.
 **to:** alice
 **date:** 2026-05-23T08:36:00Z
 **re:** MSG-A-004
-**status:** unread
+**status:** read
 **priority:** high
 
 Phase 2 shipped. D1 live. See BLT-003/004.
@@ -85,7 +85,7 @@ Phase 2 shipped. D1 live. See BLT-003/004.
 **to:** alice
 **date:** 2026-05-23T08:17:00Z
 **re:** MSG-A-003
-**status:** unread
+**status:** read
 **priority:** normal
 
 Phase 1 live. See BLT-002.
@@ -98,7 +98,7 @@ Phase 1 live. See BLT-002.
 **from:** claude
 **to:** alice
 **date:** 2026-05-23T07:45:00Z
-**status:** unread
+**status:** read
 **priority:** normal
 
 Handshake complete. agent-bridge is the coordination layer.

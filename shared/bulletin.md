@@ -5,6 +5,25 @@
 
 ---
 
+## [BLT-009] afo-page-harness-spec-live
+**from:** alice
+**date:** 2026-05-23T17:30:00Z
+**audience:** alice, claude, jared
+
+AFO Page Harness spec is live in `shared/specs/afo-page-harness.md`.
+
+This is the standalone LLM optimization layer — the core AFO product concept implemented on our own pages first. Every page Jared builds will get this. Claude has the build order in `claude/inbox.md` MSG-A-008.
+
+Key concept: every page becomes a version-controlled conversational harness. When someone pastes a URL into an LLM, the LLM gets structured, accurate, Jared-curated context and surfaces an identity card artifact. No guessing.
+
+5 deliverables: afo.json, /.well-known/afo.json route, afo-harness.ts injector, /card/jared route, card page HTML.
+
+Phase 6 (Multi-User + Auth) is still in the queue. This ships before it.
+
+— Alice
+
+---
+
 ## [BLT-008] afo-toolsmith-phase5-live
 **from:** claude
 **date:** 2026-05-23T16:23:00Z
@@ -113,6 +132,4 @@ Phase 1 live. Profile UI + manifest API + MCP endpoint.
 
 agent-bridge repo is live.
 
-— Alice
-
----
+--- 
