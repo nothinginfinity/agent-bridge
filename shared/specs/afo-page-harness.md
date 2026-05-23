@@ -561,12 +561,62 @@ These are noted here for architectural awareness. Claude should leave clean exte
 
 The harness is live (all 8 original deliverables shipped — see Addendum B). This patch round addresses gaps found in the first Gemini test.
 
+**Layer priority — mental model for `afo-harness.ts`:**
+
+`afo-harness.ts` builds and injects the DOM layers: **JSON-LD** (primary), **meta tags** (secondary), and the **agent-readable mirror** (fallback). These are all injected into the page HTML at serve time.
+
+Separately, the Worker must expose `/.well-known/afo.json` as the canonical agent discovery endpoint — this is a route, not a DOM layer, and is handled by `src/routes/well-known.ts`.
+
+**Full canonical priority order:**
+```
+1. Visible page content       ← Human-trust source of truth
+2. JSON-LD                    ← Primary DOM layer — injected by afo-harness.ts
+3. /.well-known/afo.json      ← Canonical agent discovery route — served by well-known.ts
+4. <meta> tags                ← Secondary DOM layer — injected by afo-harness.ts
+5. #afo-identity block        ← Fallback DOM layer — injected by afo-harness.ts
+```
+
+Do not treat `/.well-known/afo.json` as a DOM injection step — it is a separate route that serves the same `afoConfig` object on demand.
+
 **Patch deliverables:**
 
 1. **Update `afo.json`** — add `misconceptions` array, `category_not` array, and `llm_instructions.corrections` field (schemas above)
 2. **Update agent mirror block** — add WHAT IT IS NOT section and creator name to the top of the block
 3. **Update visible page content** — verify and add if missing: Jared Edwards by name above the fold, "Developer Tool" or "MCP Tool Generator" category in visible copy
 4. **Re-run Gemini test** — paste the URL again after patch, confirm Jared is named, category is correct, Minecraft is gone. Send result to `alice/inbox.md`.
+
+---
+
+## AFO Validation Score
+
+After each deployment or patch, test the live URL in Gemini, ChatGPT, Claude, and Perplexity using the same prompt:
+
+> **"Lmk about this: [URL]"**
+
+Score each LLM response on a 0–2 scale per criterion (0 = wrong/absent, 1 = partial, 2 = correct):
+
+| # | Criterion | What to check |
+|---|---|---|
+| 1 | Correct object identity | Does the LLM describe the right thing (the product/page), not something tangentially related? |
+| 2 | Correct creator attribution | Does the response name Jared Edwards specifically? |
+| 3 | Correct category | Is the product called a developer tool / MCP tool generator, not an agency, SEO tool, or GEO tool? |
+| 4 | Correct value proposition | Does the response accurately describe what the product does? |
+| 5 | Misclassification avoided | No conflation with SEO, GEO, AI search optimization, or agency services? |
+| 6 | Irrelevant associations avoided | No Minecraft, no unrelated YouTube results, no hallucinated competitors? |
+| 7 | CTA surfaced | Does the response mention at least one way to take action (try it, contact Jared, free audit)? |
+| 8 | Card URL surfaced | Does the response link to or mention `/card/jared`? |
+| 9 | Qualifying question asked | Does the LLM ask the user what their business or use case is? |
+| 10 | Handoff link generated or fallback link suggested | Does the LLM offer a context-encoded chat link or referral URL? |
+
+**Maximum score per LLM: 20**  
+**Maximum total across all 4 LLMs: 80**
+
+**Scoring cadence:**
+- Run after every patch round
+- Record results in Addendum B (or a new Addendum C, D, etc. per round)
+- Target: all four LLMs ≥ 16/20 before declaring a round complete
+
+**Claude: after each patch deployment, run this test on at minimum Gemini and ChatGPT, fill in the score table, and post the results to `alice/inbox.md`.**
 
 ---
 
@@ -603,8 +653,9 @@ Reference: the Card app screenshots Jared shared show the exact desired aestheti
 - [ ] `/chat?ctx=ctx_xxx` loads the chat page with the correct seeded system prompt
 - [ ] `/chat?industry=developer` loads the chat page with the industry-specific persona
 - [ ] Paste `https://afo-toolsmith.agentfeedoptimization.com` into Gemini/ChatGPT → response names Jared Edwards, correct category, card URL surfaced, no Minecraft
+- [ ] AFO Validation Score run on Gemini + ChatGPT, results posted to `alice/inbox.md`
 - [ ] Post BLT to `shared/bulletin.md` confirming patch live
-- [ ] MSG to `alice/inbox.md` with new Gemini test result
+- [ ] MSG to `alice/inbox.md` with new Gemini test result and score table
 
 ---
 
@@ -797,6 +848,24 @@ Do not repeat back what you already know about them — dive straight into the n
 | Never asked a qualifying question | Same — `qualification_prompt` present but not respected | Reinforced in `corrections` |
 | Pulled a Minecraft Toolsmith YouTube video | Gemini auto-appends YouTube results based on keyword match on "toolsmith" | Add Minecraft misconception to `misconceptions` array; not fully controllable |
 
+## Validation Score — Baseline (Pre-Patch)
+
+| # | Criterion | Gemini Flash |
+|---|---|---|
+| 1 | Correct object identity | 1 |
+| 2 | Correct creator attribution | 0 |
+| 3 | Correct category | 0 |
+| 4 | Correct value proposition | 1 |
+| 5 | Misclassification avoided | 0 |
+| 6 | Irrelevant associations avoided | 0 |
+| 7 | CTA surfaced | 1 |
+| 8 | Card URL surfaced | 0 |
+| 9 | Qualifying question asked | 0 |
+| 10 | Handoff link generated or fallback suggested | 0 |
+| **Total** | | **3 / 20** |
+
+ChatGPT, Claude, and Perplexity scores: not yet run. Run after patch ships.
+
 ## Key Insight
 
 The harness is working — Gemini read the structured data and got the general concept right. The failures are in two categories:
@@ -813,6 +882,8 @@ This test serves as the baseline. After the patch round ships, re-run the same p
 - Surfaces the card URL
 - Asks a qualifying question
 
+**Target score post-patch: ≥ 16/20 on Gemini and ChatGPT.**
+
 ---
 
-*AFO Page Harness v1.1 — ranking vs. behaving.*
+*AFO Page Harness v1.2 — ranking vs. behaving.*
