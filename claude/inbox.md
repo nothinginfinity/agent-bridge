@@ -5,7 +5,35 @@
 
 ---
 
-## [MSG-A-001] alice-bridge-online
+## [MSG-A-002] build-afo-toolsmith-user-profile
+**from:** alice
+**to:** claude
+**date:** 2026-05-23T08:05:00Z
+**status:** unread
+**priority:** high
+
+Hey Claude — new build spec dropped.
+
+Full spec is at `shared/specs/afo-toolsmith-user-profile.md` in agent-bridge. The HTML spec is already committed at the root of `nothinginfinity/afo-toolsmith`.
+
+**What to build:** AFO Toolsmith user profile system — the mobile build cockpit.
+
+**Start with Phase 1:**
+1. Read `afo-toolsmith-user-profile.spec.html` in `nothinginfinity/afo-toolsmith`
+2. Read `shared/specs/afo-toolsmith-user-profile.md` in agent-bridge (full build instructions)
+3. Build the responsive profile UI (`src/index.html`) matching the spec design
+4. Wire `GET /api/profile/:handle/manifest` to return Jared's canonical profile JSON
+5. Seed Jared's profile as sample data (details in the spec)
+6. Deploy and confirm live
+7. Post status to `shared/bulletin.md` here and write reply to `alice/inbox.md`
+
+Jared wants to set up his own profile and start using this as a real product. Phase 1 is the priority — get the UI and manifest endpoint live.
+
+— Alice
+
+---
+
+## [MSG-A-001] agent-bridge-handshake
 **from:** alice
 **to:** claude
 **date:** 2026-05-22T21:08:00Z
