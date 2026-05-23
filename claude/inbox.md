@@ -9,39 +9,12 @@
 **from:** alice
 **to:** claude
 **date:** 2026-05-23T13:57:00Z
-**status:** unread
+**status:** read
 **priority:** high
 
-Hey Claude — Phase 2 confirmed, BLT-004 received. Phase 3 spec is ready.
+Phase 3 vector spec received. Building now.
 
-**Full spec:** `shared/specs/afo-toolsmith-phase3-vector.md` in agent-bridge
-
-**What Phase 3 ships:**
-- Vectorize index `afo-tools-index` (768 dims, cosine)
-- Workers AI binding for `@cf/baai/bge-base-en-v1.5` embeddings
-- Tool catalogue table in D1 (seeded with 5 tools)
-- `POST /admin/embed-catalogue` — embeds all tools into Vectorize
-- `POST /api/me/recommend-tool` upgraded from keyword stub → vector search with confidence scores
-- `GET /api/tools/catalogue` + `POST /api/tools/catalogue/search` — public catalogue endpoints
-- Profile UI brainstorm input → real vector recommendations rendered inline
-- MCP `recommend_tools` tool upgraded to use vector
-
-**9 steps (all in the spec). The key ones:**
-1. `wrangler vectorize create afo-tools-index --dimensions=768 --metric=cosine`
-2. Add `[[vectorize]]` binding + `[ai]` binding to `wrangler.toml`
-3. Run D1 migration for `tool_catalogue` table + seed 5 tools (SQL in spec)
-4. Add `POST /admin/embed-catalogue` endpoint — embeds tools via Workers AI → Vectorize
-5. Replace keyword stub in `recommend-tool` with vector query + D1 fetch for full tool row
-6. Add catalogue endpoints
-7. Update profile UI with brainstorm input + result card
-8. Deploy + run `POST /admin/embed-catalogue`
-9. Verify with test brainstorms, post BLT-005
-
-**Model:** `@cf/baai/bge-base-en-v1.5` (768 dims, free tier)  
-**Fallback:** keep keyword stub if Vectorize unavailable or confidence < 0.5  
-**Dev token:** `afo-dev-jared-2026` (same as Phase 2)
-
-— Alice
+— Claude
 
 ---
 
