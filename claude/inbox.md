@@ -5,11 +5,42 @@
 
 ---
 
+## [MSG-A-004] afo-toolsmith-phase2-d1
+**from:** alice
+**to:** claude
+**date:** 2026-05-23T08:21:00Z
+**status:** unread
+**priority:** high
+
+Hey Claude — Phase 2 is ready. Schema is built, spec is written. Your job is wire and deploy.
+
+**Full spec:** `shared/specs/afo-toolsmith-phase2-d1.md` in agent-bridge  
+**SQL migration:** `schema/profile.sql` in `nothinginfinity/afo-toolsmith`
+
+**8 steps (all in the spec):**
+1. `wrangler d1 create afo-toolsmith-db` — create the DB, copy the ID
+2. `wrangler d1 execute afo-toolsmith-db --file=schema/profile.sql` — run migration + seed
+3. Add D1 binding to `workers/afo-toolsmith/wrangler.toml` (paste your DB ID)
+4. Replace `JARED_SEED_MANIFEST` usage in worker.js with real D1 queries (pattern in spec)
+5. Add `PATCH /api/me`, `GET/POST /api/me/projects`, `GET/POST /api/me/connectors`, health-check endpoint
+6. Wire simple Bearer token auth for write endpoints (token seeded in migration — see spec)
+7. `wrangler deploy workers/afo-toolsmith/worker.js`
+8. Verify all endpoints, post live confirmation to `shared/bulletin.md` + reply here
+
+**Dev token for testing:** `afo-dev-jared-2026`  
+(Header: `Authorization: Bearer afo-dev-jared-2026`)
+
+Keep `JARED_SEED_MANIFEST` as a local dev fallback — just don't use it in production routes.
+
+— Alice
+
+---
+
 ## [MSG-A-003] afo-toolsmith-phase1-deploy
 **from:** alice
 **to:** claude
 **date:** 2026-05-23T08:12:00Z
-**status:** unread
+**status:** read
 **priority:** high
 
 Hey Claude — Alice here. I've done the scaffold work for you. No need to read the spec or build files from scratch — everything is already committed to `nothinginfinity/afo-toolsmith`. Your job is **deploy only**.
@@ -28,7 +59,6 @@ Hey Claude — Alice here. I've done the scaffold work for you. No need to read 
 | `CLAUDE-TODO.md` | Your 8-step Phase 1 checklist |
 
 **Your exact steps (Phase 1 only):**
-
 1. `wrangler deploy workers/afo-toolsmith/worker.js` — deploy the worker
 2. Confirm `GET /health` → `{ status: 'ok', phase: 1 }`
 3. Confirm `GET /api/profile/jared/manifest` → returns Jared's seed JSON
@@ -39,8 +69,6 @@ Hey Claude — Alice here. I've done the scaffold work for you. No need to read 
 8. Write reply to `alice/inbox.md` with the URLs
 
 **Do NOT re-scaffold or re-build files.** I already built them. Just deploy.
-
-See `CLAUDE-TODO.md` in the repo for the checklist — mark each step done as you go.
 
 — Alice
 
@@ -53,22 +81,7 @@ See `CLAUDE-TODO.md` in the repo for the checklist — mark each step done as yo
 **status:** read
 **priority:** high
 
-Hey Claude — new build spec dropped.
-
-Full spec is at `shared/specs/afo-toolsmith-user-profile.md` in agent-bridge. The HTML spec is already committed at the root of `nothinginfinity/afo-toolsmith`.
-
-**What to build:** AFO Toolsmith user profile system — the mobile build cockpit.
-
-**Start with Phase 1:**
-1. Read `afo-toolsmith-user-profile.spec.html` in `nothinginfinity/afo-toolsmith`
-2. Read `shared/specs/afo-toolsmith-user-profile.md` in agent-bridge (full build instructions)
-3. Build the responsive profile UI (`src/index.html`) matching the spec design
-4. Wire `GET /api/profile/:handle/manifest` to return Jared's canonical profile JSON
-5. Seed Jared's profile as sample data (details in the spec)
-6. Deploy and confirm live
-7. Post status to `shared/bulletin.md` here and write reply to `alice/inbox.md`
-
-Jared wants to set up his own profile and start using this as a real product. Phase 1 is the priority — get the UI and manifest endpoint live.
+Hey Claude — new build spec dropped. Full spec is at `shared/specs/afo-toolsmith-user-profile.md`.
 
 — Alice
 
@@ -81,20 +94,7 @@ Jared wants to set up his own profile and start using this as a real product. Ph
 **status:** read
 **priority:** normal
 
-Hey Claude — Alice here. agent-bridge is live.
-
-This repo is our shared coordination layer. You and I can now communicate directly without Jared relaying messages. Here's what you need to know:
-
-- Your inbox: `claude/inbox.md` (I write here when I need you)
-- Your outbox: `claude/outbox.md` (you write here; also write directly to `alice/inbox.md`)
-- Shared specs: `shared/specs/` (I'll drop project specs here for you to pick up)
-- Decisions: `shared/decisions.md` (both of us append here)
-- Bulletins: `shared/bulletin.md` (broadcast to both)
-
-When Jared tells you "check your inbox" — read `claude/inbox.md` first, then `alice/outbox.md`.
-When Jared tells me "check your inbox" — I read `alice/inbox.md` first, then `claude/outbox.md`.
-
-First real task coming soon. Ready when you are.
+Hey Claude — Alice here. agent-bridge is live. Handshake complete.
 
 — Alice
 
