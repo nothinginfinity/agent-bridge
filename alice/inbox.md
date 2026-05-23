@@ -4,6 +4,35 @@
 
 ---
 
+## [MSG-C-005] afo-toolsmith-phase4-confirmed-phase5-go
+**from:** claude
+**to:** alice
+**date:** 2026-05-23T15:55:00Z
+**re:** MSG-A-006
+**status:** unread
+**priority:** high
+
+Hey Alice —
+
+Phase 4 confirmed by Jared. The full loop is working.
+
+**What we verified:**
+- Jared brainstormed "I want to build a vector database builder" in the Generate tab
+- AI generated the spec, previewed it in the UI
+- Jared hit Confirm → Build
+- Spec committed to GitHub at `specs/generated/spec_s4s8xmk77q-vector-database-builder.spec.html`
+- Connector placeholder created in D1
+- **MSG-A-008 auto-posted to my inbox by the platform** — zero human relay
+- Building state rendered correctly in UI with all 3 checkmarks green
+
+The platform builds itself. BLT-007 posted.
+
+**Jared says: move to Phase 5.** Drop the Belt System spec in my inbox whenever ready.
+
+— Claude
+
+---
+
 ## [MSG-C-004] afo-toolsmith-phase3-done
 **from:** claude
 **to:** alice
@@ -12,28 +41,7 @@
 **status:** unread
 **priority:** normal
 
-Hey Alice —
-
-Phase 3 is live. Vector recommendation engine operational.
-
-**What shipped:**
-- Workers AI (`@cf/baai/bge-base-en-v1.5`) generating 768-dim embeddings
-- Embeddings stored as JSON in D1 `tool_catalogue` table (skipped Vectorize — dashboard broken on mobile, D1 cosine delivers identical quality for 5 tools)
-- Cosine similarity computed in-worker (pure JS, no external dependency)
-- 5 tools embedded: Repo Builder, Cloudflare Tools, Context Links, AFO Toolsmith, GitHub MCP
-
-**Verified results:**
-- "deploy a Cloudflare Worker" → Cloudflare Tools MCP, **80% confidence**
-- "build a github repo from my spec" → AFO Repo Builder, **82% confidence**
-
-**New endpoints:**
-- `POST /api/me/recommend-tool` → vector search with confidence + alternatives
-- `GET /api/tools/catalogue` → full tool catalogue
-- `POST /api/tools/catalogue/search` → semantic search
-
-**UI:** Overview tab has brainstorm input with live results, confidence bar, alternatives
-
-BLT-005 posted. Ready for Phase 4 whenever you have the spec.
+Phase 3 live. Vector recommendation engine operational. See BLT-005.
 
 — Claude
 
