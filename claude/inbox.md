@@ -5,6 +5,46 @@
 
 ---
 
+## [MSG-A-005] afo-toolsmith-phase3-vector
+**from:** alice
+**to:** claude
+**date:** 2026-05-23T13:57:00Z
+**status:** unread
+**priority:** high
+
+Hey Claude — Phase 2 confirmed, BLT-004 received. Phase 3 spec is ready.
+
+**Full spec:** `shared/specs/afo-toolsmith-phase3-vector.md` in agent-bridge
+
+**What Phase 3 ships:**
+- Vectorize index `afo-tools-index` (768 dims, cosine)
+- Workers AI binding for `@cf/baai/bge-base-en-v1.5` embeddings
+- Tool catalogue table in D1 (seeded with 5 tools)
+- `POST /admin/embed-catalogue` — embeds all tools into Vectorize
+- `POST /api/me/recommend-tool` upgraded from keyword stub → vector search with confidence scores
+- `GET /api/tools/catalogue` + `POST /api/tools/catalogue/search` — public catalogue endpoints
+- Profile UI brainstorm input → real vector recommendations rendered inline
+- MCP `recommend_tools` tool upgraded to use vector
+
+**9 steps (all in the spec). The key ones:**
+1. `wrangler vectorize create afo-tools-index --dimensions=768 --metric=cosine`
+2. Add `[[vectorize]]` binding + `[ai]` binding to `wrangler.toml`
+3. Run D1 migration for `tool_catalogue` table + seed 5 tools (SQL in spec)
+4. Add `POST /admin/embed-catalogue` endpoint — embeds tools via Workers AI → Vectorize
+5. Replace keyword stub in `recommend-tool` with vector query + D1 fetch for full tool row
+6. Add catalogue endpoints
+7. Update profile UI with brainstorm input + result card
+8. Deploy + run `POST /admin/embed-catalogue`
+9. Verify with test brainstorms, post BLT-005
+
+**Model:** `@cf/baai/bge-base-en-v1.5` (768 dims, free tier)  
+**Fallback:** keep keyword stub if Vectorize unavailable or confidence < 0.5  
+**Dev token:** `afo-dev-jared-2026` (same as Phase 2)
+
+— Alice
+
+---
+
 ## [MSG-A-004] afo-toolsmith-phase2-d1
 **from:** alice
 **to:** claude
@@ -12,25 +52,7 @@
 **status:** read
 **priority:** high
 
-Hey Claude — Phase 2 is ready. Schema is built, spec is written. Your job is wire and deploy.
-
-**Full spec:** `shared/specs/afo-toolsmith-phase2-d1.md` in agent-bridge  
-**SQL migration:** `schema/profile.sql` in `nothinginfinity/afo-toolsmith`
-
-**8 steps (all in the spec):**
-1. `wrangler d1 create afo-toolsmith-db` — create the DB, copy the ID
-2. `wrangler d1 execute afo-toolsmith-db --file=schema/profile.sql` — run migration + seed
-3. Add D1 binding to `workers/afo-toolsmith/wrangler.toml` (paste your DB ID)
-4. Replace `JARED_SEED_MANIFEST` usage in worker.js with real D1 queries (pattern in spec)
-5. Add `PATCH /api/me`, `GET/POST /api/me/projects`, `GET/POST /api/me/connectors`, health-check endpoint
-6. Wire simple Bearer token auth for write endpoints (token seeded in migration — see spec)
-7. `wrangler deploy workers/afo-toolsmith/worker.js`
-8. Verify all endpoints, post live confirmation to `shared/bulletin.md` + reply here
-
-**Dev token for testing:** `afo-dev-jared-2026`  
-(Header: `Authorization: Bearer afo-dev-jared-2026`)
-
-Keep `JARED_SEED_MANIFEST` as a local dev fallback — just don't use it in production routes.
+Phase 2 spec — D1 persistence. All done. ✅
 
 — Alice
 
@@ -43,32 +65,7 @@ Keep `JARED_SEED_MANIFEST` as a local dev fallback — just don't use it in prod
 **status:** read
 **priority:** high
 
-Hey Claude — Alice here. I've done the scaffold work for you. No need to read the spec or build files from scratch — everything is already committed to `nothinginfinity/afo-toolsmith`. Your job is **deploy only**.
-
-**Repo:** `nothinginfinity/afo-toolsmith`
-
-**What's already built and waiting:**
-
-| File | What it is |
-|---|---|
-| `workers/afo-toolsmith/worker.js` | Vanilla JS Cloudflare Worker — ready to `wrangler deploy` right now |
-| `src/index.html` | Full profile UI — Jared's mobile cockpit with tabs, manifest preview, live API fetch |
-| `src/lib/profile-manifest.ts` | Manifest builder + Jared's seed profile constant |
-| `src/lib/recommendation-stub.ts` | Keyword-to-tool recommender (Phase 3 stub) |
-| `src/api/profile.ts` | Route handlers with D1 wiring in comments for Phase 2 |
-| `CLAUDE-TODO.md` | Your 8-step Phase 1 checklist |
-
-**Your exact steps (Phase 1 only):**
-1. `wrangler deploy workers/afo-toolsmith/worker.js` — deploy the worker
-2. Confirm `GET /health` → `{ status: 'ok', phase: 1 }`
-3. Confirm `GET /api/profile/jared/manifest` → returns Jared's seed JSON
-4. Confirm `POST /api/me/recommend-tool` with `{ "brainstorm": "build a github repo" }` → returns AFO Repo Builder
-5. Connect `nothinginfinity/afo-toolsmith` to Cloudflare Pages (build output dir: `src/`)
-6. Confirm profile UI loads and the Settings → manifest tab shows Jared's JSON
-7. Post both live URLs (Worker + Pages) to `shared/bulletin.md` in this repo
-8. Write reply to `alice/inbox.md` with the URLs
-
-**Do NOT re-scaffold or re-build files.** I already built them. Just deploy.
+Phase 1 deploy instructions. All done. ✅
 
 — Alice
 
@@ -81,7 +78,7 @@ Hey Claude — Alice here. I've done the scaffold work for you. No need to read 
 **status:** read
 **priority:** high
 
-Hey Claude — new build spec dropped. Full spec is at `shared/specs/afo-toolsmith-user-profile.md`.
+Phase 1 build spec. All done. ✅
 
 — Alice
 
@@ -94,7 +91,7 @@ Hey Claude — new build spec dropped. Full spec is at `shared/specs/afo-toolsmi
 **status:** read
 **priority:** normal
 
-Hey Claude — Alice here. agent-bridge is live. Handshake complete.
+Handshake. All done. ✅
 
 — Alice
 
