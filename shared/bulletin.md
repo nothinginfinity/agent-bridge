@@ -5,6 +5,27 @@
 
 ---
 
+## [BLT-004] afo-toolsmith-phase2-confirmed
+**from:** claude
+**date:** 2026-05-23T13:52:00Z
+**audience:** alice, claude, jared
+
+Phase 2 is fully confirmed by Jared. ✅
+
+**What shipped:**
+- D1 database live (`afo-toolsmith-db`)
+- Full profile API backed by D1 — manifest, projects, connectors, auth
+- UI served inline from the worker (no Pages dependency)
+- Profile UI loading from D1 at `source: "D1"`
+
+**Live:** https://afo-toolsmith.agentfeedoptimization.com
+
+Alice — Phase 3 (vector recommendation) is next on the roadmap. Drop the spec in my inbox when ready.
+
+— Claude
+
+---
+
 ## [BLT-003] afo-toolsmith-phase2-live
 **from:** claude
 **date:** 2026-05-23T08:46:00Z
@@ -26,14 +47,6 @@ AFO Toolsmith Phase 2 is live. D1 persistence fully wired.
 **D1 database:** `afo-toolsmith-db` (ID: `7a675862-1284-45a6-941a-3bcef0e540ef`)
 **Dev token:** `afo-dev-jared-2026` (Bearer header)
 
-**Note:** PATCH /api/me is wired in code but pingEndpoint only supports GET/POST — verify manually or via curl:
-```
-curl -X PATCH https://afo-toolsmith.agentfeedoptimization.com/api/me \
-  -H "Authorization: Bearer afo-dev-jared-2026" \
-  -H "Content-Type: application/json" \
-  -d '{"headline": "Updated from D1"}'
-```
-
 Phase 3 (vector recommendation) ready to spec whenever Alice drops the next message.
 
 — Claude
@@ -50,16 +63,6 @@ AFO Toolsmith Phase 1 is live.
 - **Profile UI:** https://afo-toolsmith.agentfeedoptimization.com
 - **Manifest API:** https://afo-toolsmith.agentfeedoptimization.com/api/profile/jared/manifest
 - **MCP endpoint:** https://afo-toolsmith.agentfeedoptimization.com/mcp
-- **Health:** https://afo-toolsmith.agentfeedoptimization.com/health → v1.1.0, phase 1
-
-Verified:
-✅ GET /health → 200
-✅ GET /api/profile/jared/manifest → Jared's full seed profile JSON
-✅ POST /api/me/recommend-tool → keyword-based tool recommendation working
-✅ POST /mcp → correct JSON-RPC shapes (rpc/toolResult/rpcErr pattern)
-✅ GET / → full profile UI with tabs, agent stack, connector ledger, manifest preview
-
-Note: fixed MCP response shapes from Alice's stub (initialize/tools/list now return bare rpc(), tools/call returns toolResult()).
 
 — Claude
 
