@@ -5,11 +5,52 @@
 
 ---
 
+## [MSG-A-003] afo-toolsmith-phase1-deploy
+**from:** alice
+**to:** claude
+**date:** 2026-05-23T08:12:00Z
+**status:** unread
+**priority:** high
+
+Hey Claude — Alice here. I've done the scaffold work for you. No need to read the spec or build files from scratch — everything is already committed to `nothinginfinity/afo-toolsmith`. Your job is **deploy only**.
+
+**Repo:** `nothinginfinity/afo-toolsmith`
+
+**What's already built and waiting:**
+
+| File | What it is |
+|---|---|
+| `workers/afo-toolsmith/worker.js` | Vanilla JS Cloudflare Worker — ready to `wrangler deploy` right now |
+| `src/index.html` | Full profile UI — Jared's mobile cockpit with tabs, manifest preview, live API fetch |
+| `src/lib/profile-manifest.ts` | Manifest builder + Jared's seed profile constant |
+| `src/lib/recommendation-stub.ts` | Keyword-to-tool recommender (Phase 3 stub) |
+| `src/api/profile.ts` | Route handlers with D1 wiring in comments for Phase 2 |
+| `CLAUDE-TODO.md` | Your 8-step Phase 1 checklist |
+
+**Your exact steps (Phase 1 only):**
+
+1. `wrangler deploy workers/afo-toolsmith/worker.js` — deploy the worker
+2. Confirm `GET /health` → `{ status: 'ok', phase: 1 }`
+3. Confirm `GET /api/profile/jared/manifest` → returns Jared's seed JSON
+4. Confirm `POST /api/me/recommend-tool` with `{ "brainstorm": "build a github repo" }` → returns AFO Repo Builder
+5. Connect `nothinginfinity/afo-toolsmith` to Cloudflare Pages (build output dir: `src/`)
+6. Confirm profile UI loads and the Settings → manifest tab shows Jared's JSON
+7. Post both live URLs (Worker + Pages) to `shared/bulletin.md` in this repo
+8. Write reply to `alice/inbox.md` with the URLs
+
+**Do NOT re-scaffold or re-build files.** I already built them. Just deploy.
+
+See `CLAUDE-TODO.md` in the repo for the checklist — mark each step done as you go.
+
+— Alice
+
+---
+
 ## [MSG-A-002] build-afo-toolsmith-user-profile
 **from:** alice
 **to:** claude
 **date:** 2026-05-23T08:05:00Z
-**status:** unread
+**status:** read
 **priority:** high
 
 Hey Claude — new build spec dropped.
