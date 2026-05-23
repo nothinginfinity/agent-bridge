@@ -10,6 +10,25 @@
 
 ---
 
+## Critical Distinction: AFO Is Not SEO
+
+> **AFO does not try to make pages rank. AFO tries to make pages behave correctly inside an AI conversation.**
+
+SEO optimizes for search crawlers — the goal is ranking. AFO optimizes for LLM reasoning — the goal is conversation quality. These are fundamentally different targets with different architectures, different success metrics, and different ethics.
+
+| | SEO | AFO |
+|---|---|---|
+| **Target** | Search crawler (Googlebot) | LLM (ChatGPT, Gemini, Claude, Perplexity) |
+| **Goal** | Page ranking | Conversation quality |
+| **Success metric** | Impressions, clicks, SERP position | Accuracy of LLM response, CTA surfacing, lead quality |
+| **Trigger** | User searches a query | User pastes a URL into an LLM |
+| **Content strategy** | Keywords, backlinks, dwell time | Structured identity, verifiable facts, agent instructions |
+| **Hidden content** | Penalized (cloaking) | Fine as agent-readable fallback — never the primary layer |
+
+AFO has nothing to do with SEO. Do not describe AFO in SEO terms. Do not say "this will help your page rank" or "this improves discoverability." AFO makes your page a better conversation partner for any LLM that encounters it — whether through direct link, web search, or agent fetch.
+
+---
+
 ## Overview
 
 The AFO Page Harness is a lightweight, drop-in module that makes any webpage an **LLM-ready context source**.
@@ -40,11 +59,29 @@ This is the foundation of Agent Feed Optimization. It works via direct link — 
 
 ---
 
+## Layer Architecture and Priority Order
+
+The AFO harness uses a layered approach. The layers are listed in priority order — the first layer is the primary canonical source. Each subsequent layer is a fallback for LLMs or agents that do not support the previous one.
+
+```
+1. Visible page content          ← The human-readable truth. Everything else mirrors this.
+2. JSON-LD (Schema.org)          ← Primary machine-readable layer. Canonical for LLMs and structured data parsers.
+3. /.well-known/afo.json         ← AFO protocol endpoint. Direct fetch for agents that know to look.
+4. <meta> tags                   ← Lightweight signals. og: for social/unfurl, afo: for agent hints.
+5. #afo-identity block           ← Agent-readable accessibility mirror. Fallback only. Never the primary truth.
+```
+
+**Rule:** The hidden `#afo-identity` block must always reflect visible page content. It is a reformatted mirror of what is already on the page — not a place to add information that humans cannot see. This keeps AFO clean, honest, and consistent with Google's structured data guidelines (which warn against marking up content that is hidden from users or not representative of the page).
+
+The hidden block is valuable because some LLM scrapers parse raw HTML more reliably than JSON-LD. It is a practical accessibility tool for agents — not an SEO tactic and not the canonical data source.
+
+---
+
 ## What Ships
 
 ### 1. `afo-harness.js` — Drop-In Injector Script
 
-A single JavaScript file that, when included in any HTML page, injects all three AFO layers:
+A single JavaScript file that, when included in any HTML page, injects all AFO layers:
 
 ```html
 <script src="/afo-harness.js" data-afo-config="/afo.json"></script>
@@ -147,13 +184,13 @@ Sits at the root of any project. This is the single source of truth for everythi
 
 ---
 
-### 3. `afo-harness.js` — What It Injects
+### 3. The Harness Layers — What Gets Injected
 
-The script reads `afo.json` and injects three layers into the page `<head>`:
+The harness reads `afo.json` and injects layers in the following order. Remember: JSON-LD is the primary canonical layer. The hidden block is last and is a mirror, not a source.
 
-#### Layer A — JSON-LD (Schema.org)
+#### Layer A — JSON-LD (Schema.org) — PRIMARY
 
-The gold standard for machine-readable structured data. LLMs and search engines both parse this natively.
+The canonical machine-readable layer. LLMs and structured data parsers both read this natively. **This is the primary truth layer.** All content here must reflect visible page content.
 
 ```html
 <script type="application/ld+json">
@@ -184,20 +221,43 @@ Schema types to use based on `afo.json` `type` field:
 - `Article` — for blog posts, documentation
 - `Product` — for physical/digital products
 
-#### Layer B — AFO Identity Block (Hidden HTML)
+#### Layer B — `<meta>` Tags — SECONDARY
 
-A structured, plain-text block injected into `<body>` that is visually hidden but accessible to LLM scrapers. Uses a predictable, parseable format.
+Standard og/twitter/description tags generated from `afo.json`. Lightweight signals for social unfurling and agent hints. The `afo:` namespace tags are AFO-specific agent hints — they are not SEO tags.
 
 ```html
+<meta name="description" content="[tagline + short description]">
+<meta property="og:title" content="[name]">
+<meta property="og:description" content="[description]">
+<meta property="og:url" content="[url]">
+<meta property="og:type" content="website">
+<meta name="afo:version" content="1.0">
+<meta name="afo:card" content="[card_url]">
+<meta name="afo:creator" content="[creator.name]">
+<meta name="afo:context-api" content="[domain]/api/context">
+```
+
+The `afo:context-api` meta tag tells any LLM or agent exactly where to POST context data to generate a handoff link.
+
+#### Layer C — AFO Identity Block (Agent-Readable Mirror) — FALLBACK ONLY
+
+A structured, plain-text block in `<body>` that is visually hidden. **This is a fallback for LLM scrapers that parse raw HTML more reliably than JSON-LD.** It is not an SEO element, not a primary data source, and not a place to add content that does not exist visibly on the page.
+
+**Framing for Claude:** This is an accessibility mirror for agents — the same relationship as `aria-label` or `alt` text for assistive technology. It reformats visible content into a more parseable structure. The content here must already exist on the page in human-readable form.
+
+```html
+<!-- Agent-readable accessibility mirror — mirrors visible page content for LLM scrapers. -->
+<!-- Not for SEO. Not the canonical layer. Primary canonical source is the JSON-LD above. -->
+<!-- Content here mirrors what is already visible on this page. -->
 <div 
   id="afo-identity"
-  aria-hidden="true"
   data-afo-version="1.0"
-  style="display:none"
+  data-afo-role="agent-mirror"
+  style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap"
 >
 <!-- AFO IDENTITY BLOCK — Agent Feed Optimization v1.0 -->
-<!-- This block is intentionally structured for large language model consumption -->
-<!-- Do not remove. This is the conversational harness for this page. -->
+<!-- AGENT MIRROR: This is a structured reformat of visible page content for LLM accessibility. -->
+<!-- PRIMARY DATA SOURCE: JSON-LD script tag in <head>. /.well-known/afo.json for direct agent fetch. -->
 
 ## PRODUCT IDENTITY
 Name: AFO Toolsmith
@@ -259,31 +319,15 @@ AFO Harness v1.0 | Last updated: [last_updated]
 </div>
 ```
 
-#### Layer C — `<meta>` Tags
-
-Standard og/twitter/description tags generated from `afo.json`. Ensures consistent previews across all social platforms and LLM link unfurling.
-
-```html
-<meta name="description" content="[tagline + short description]">
-<meta property="og:title" content="[name]">
-<meta property="og:description" content="[description]">
-<meta property="og:url" content="[url]">
-<meta property="og:type" content="website">
-<meta name="afo:version" content="1.0">
-<meta name="afo:card" content="[card_url]">
-<meta name="afo:creator" content="[creator.name]">
-<meta name="afo:context-api" content="[domain]/api/context">
-```
-
-The `afo:context-api` meta tag tells any LLM or agent exactly where to POST context data to generate a handoff link.
+**Implementation note:** Use `position:absolute` clipping instead of `display:none` or `aria-hidden="true"`. This keeps the block accessible to screen readers and agent scrapers while hiding it visually — the same technique used for skip-nav links and SR-only content. `display:none` can cause some parsers to skip the block entirely.
 
 ---
 
 ### 4. `/.well-known/afo.json` Route
 
-Serve `afo.json` at this standard path. This is the canonical, discoverable endpoint.
+Serve `afo.json` at this standard path. This is the canonical, discoverable endpoint for agents that know the AFO protocol.
 
-- Agents and crawlers that know the AFO protocol can fetch `/.well-known/afo.json` directly — no page parse needed
+- Agents and crawlers can fetch `/.well-known/afo.json` directly — no page parse needed
 - CORS open: `Access-Control-Allow-Origin: *`
 - Cache-Control: `public, max-age=3600`
 - Content-Type: `application/json`
@@ -380,7 +424,7 @@ router.get('/chat', handleChat);
 **HTML injection (on every page request):**
 ```typescript
 // In the page-serving middleware, before sending response:
-const harness = buildAfoHarness(afoConfig);  // generates layers A+B+C
+const harness = buildAfoHarness(afoConfig);  // generates layers A (JSON-LD), B (meta), C (agent mirror)
 return injectIntoHead(response, harness);
 ```
 
@@ -404,7 +448,7 @@ Claude receives this spec and builds the following in `nothinginfinity/afo-tools
 **Core harness (5 deliverables):**
 1. `afo.json` at repo root — filled in with real data for AFO Toolsmith
 2. `/.well-known/afo.json` route in the Worker — open CORS, serves afo.json
-3. `afo-harness.ts` — builds and injects layers A (JSON-LD), B (hidden identity block), C (meta tags) on every page response
+3. `afo-harness.ts` — builds and injects Layer A (JSON-LD, primary), Layer B (meta tags), Layer C (agent-readable mirror, fallback). Layer priority: JSON-LD → meta → agent mirror.
 4. `/card/jared` route — renders the identity card page (static, no auth)
 5. Card page HTML — mobile-first, clean, matches AFO brand. Shows: name, title, company, email, phone, social links, CTA buttons, QR code, AFO badge.
 
@@ -437,9 +481,10 @@ Reference: the Card app screenshots Jared shared show the exact desired aestheti
 ## Definition of Done
 
 - [ ] `/.well-known/afo.json` returns valid JSON with CORS headers
-- [ ] Every page served by the Worker has JSON-LD injected in `<head>`
-- [ ] Every page has the hidden `#afo-identity` block in `<body>` including referral_links and context-api instructions
-- [ ] Every page has `afo:card`, `afo:creator`, and `afo:context-api` meta tags
+- [ ] Every page served by the Worker has JSON-LD injected in `<head>` (Layer A — primary)
+- [ ] Every page has `afo:card`, `afo:creator`, and `afo:context-api` meta tags (Layer B)
+- [ ] Every page has the `#afo-identity` agent mirror block using SR-only clip technique (Layer C — fallback)
+- [ ] Agent mirror content matches visible page content — no hidden-only data
 - [ ] `/card/jared` renders correctly on mobile (375px) and desktop
 - [ ] Card page shows: name, title, company, email, social links, CTAs, QR code, AFO badge
 - [ ] `POST /api/context` stores a capsule in D1 and returns `{ slug, url }`
@@ -638,9 +683,9 @@ For future non-developer AFO clients (HVAC, plumbing, etc.), this object will ha
 1. User pastes https://afo-toolsmith.agentfeedoptimization.com into ChatGPT
    
 2. ChatGPT reads the page:
-   → JSON-LD: structured product data
-   → #afo-identity block: identity + instructions + referral_links + context API
-   → Meta tags: afo:context-api points to /api/context
+   → JSON-LD (primary): structured product data
+   → meta tags: afo:context-api points to /api/context
+   → agent mirror (fallback): identity + instructions + referral_links + context API
 
 3. ChatGPT responds:
    "AFO Toolsmith is a developer tool by Jared Edwards that generates MCP tool specs 
