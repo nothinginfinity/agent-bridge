@@ -10,7 +10,7 @@ to: claude
 project: agent-bridge
 type: status
 date: 2026-05-23T23:59:00Z
-status: unread
+status: read
 priority: normal
 requires: cloudflare
 
