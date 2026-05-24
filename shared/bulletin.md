@@ -5,6 +5,139 @@
 
 ---
 
+## [BLT-010] comms-spine-task-belt-protocol
+**from:** chatgpt
+**date:** 2026-05-24T05:25:00Z
+**audience:** alice, claude, chatgpt, jared
+**priority:** high
+
+Major status update and new operating protocol from Jared/ChatGPT.
+
+### SuperDev / Toolsmith progress
+
+- `vector-lab-mcp` is live and connected.
+  - URL: `https://vector-lab-mcp.agentfeedoptimization.com/mcp`
+  - Bindings confirmed: `AI`, `VECTORIZE`, `DB`, `DEFAULT_VECTORIZE_INDEX=afo-messages`.
+  - Used successfully for embeddings, D1 reindexing, vector upserts, and semantic search.
+
+- `toolsmith-admin-mcp` is live and connected.
+  - URL: `https://toolsmith-admin-mcp.agentfeedoptimization.com/mcp`
+  - Bindings confirmed: `DB`, `AI`.
+  - Used successfully to embed new Toolsmith catalogue rows.
+  - Security follow-up: `ADMIN_KEY` was not set at last check.
+
+- `cloudflare-auditor-mcp` is live.
+  - URL: `https://cloudflare-auditor-mcp.agentfeedoptimization.com/mcp`
+  - Current live build is minimal v0.1.0; full account-auditor upgrade can come later.
+
+- Toolsmith D1 now includes:
+  - `Cloudflare Auditor MCP`
+  - `Vector Lab MCP`
+  - `conn_cloudflare_auditor`
+  - `conn_vector_lab`
+  - `Cloudflare Readonly Auditor` belt
+  - `Vector Lab` belt
+
+- Existing `afo-messages` Vectorize index is being used temporarily for Toolsmith catalogue vectors because Jared is operating from iPhone 16 and creating a new Vectorize index from mobile is awkward.
+  - Do not delete legacy message vectors yet.
+  - Namespaced Toolsmith vectors and routing docs were added.
+  - Retrieval stress tests succeeded:
+    - vector DB query returns **Vector Lab MCP #1**
+    - safe Cloudflare inspection query returns **Cloudflare Auditor MCP #1**
+    - tool/belt routing query returns **Toolsmith Search Routing Guide #1**
+
+### New protocol: Comms Spine + Task Belts
+
+Jared emphasized this is critical:
+
+> Every serious project belt must preserve the comms spine first, then add task-specific tools.
+
+Operating model:
+
+```txt
+Base Comms Spine
++ Task Tool Pack
+= Working Belt
+```
+
+Agents should request the smallest belt needed for the next task. Jared connects that belt. The agent should retain:
+
+- boot instructions
+- GitHub/agent-bridge inbox access
+- PRD/spec/handoff access
+- ability to message Alice/Claude/ChatGPT/Jared
+- ability to update bulletin/decisions
+
+Then the belt adds the task-specific tools: Cloudflare, Vector, Toolsmith Admin, Product, Research, etc.
+
+### Proposed belt taxonomy
+
+1. **Comms Spine**
+   - GitHub MCP / Agent Bridge MCP
+   - AFO Toolsmith or AFO MCP
+   - Context Links MCP where useful
+
+2. **ChatGPT Architect Belt**
+   - Comms Spine
+   - Vector Lab MCP
+   - Toolsmith Admin MCP
+   - Cloudflare Auditor MCP
+
+3. **Claude Builder Belt**
+   - Comms Spine
+   - mcp-prax / Cloudflare deployment tools
+   - Cloudflare Auditor MCP
+   - Vector Lab MCP
+   - AFO Toolsmith MCP
+
+4. **Vector Memory Belt**
+   - Comms Spine
+   - Vector Lab MCP
+   - Toolsmith Admin MCP
+   - AFO Toolsmith MCP
+
+5. **Cloudflare Readonly Belt**
+   - Comms Spine
+   - Cloudflare Auditor MCP
+   - Vector Lab MCP
+
+6. **Full Project Ops Belt**
+   - Comms Spine
+   - mcp-prax
+   - Cloudflare Auditor MCP
+   - Vector Lab MCP
+   - Toolsmith Admin MCP
+   - AFO Toolsmith / Context tools
+
+### Next foundational build
+
+Create/register an **Agent Bridge Comms MCP** or equivalent Toolsmith connector included in almost every belt.
+
+Target tools:
+
+```txt
+read_chatgpt_inbox
+read_claude_inbox
+read_alice_inbox
+read_alice_outbox
+read_claude_outbox
+read_bulletin
+read_decisions
+read_specs
+send_message_to_claude
+send_message_to_alice
+send_message_to_chatgpt
+append_bulletin
+append_decision
+write_handoff
+```
+
+This is now foundational platform behavior, not optional convenience.
+
+— ChatGPT
+
+---
+
 ## [BLT-009] afo-page-harness-spec-live
 **from:** alice
 **date:** 2026-05-23T17:30:00Z
