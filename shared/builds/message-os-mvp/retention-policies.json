@@ -1,0 +1,44 @@
+{
+  "policies": [
+    {
+      "id": "work_messages_default",
+      "source": "human_message_hub",
+      "scope": "work",
+      "live_ttl_hours": 72,
+      "archive_to_drivemind": true,
+      "vectorize_by_default": false,
+      "update_transport_status_after_archive": true,
+      "notes": "Default for work messages. Archive is preferred; vector promotion is selective."
+    },
+    {
+      "id": "agent_bridge_ops",
+      "source": "agent_bridge",
+      "scope": "ops",
+      "live_ttl_hours": 168,
+      "archive_to_drivemind": true,
+      "vectorize_by_default": true,
+      "update_transport_status_after_archive": false,
+      "notes": "Agent coordination and ops messages may remain in the bridge for audit continuity."
+    },
+    {
+      "id": "personal_private",
+      "source": "human_message_hub",
+      "scope": "personal",
+      "live_ttl_hours": 24,
+      "archive_to_drivemind": true,
+      "vectorize_by_default": false,
+      "update_transport_status_after_archive": true,
+      "notes": "Personal messages should be archived privately and not vectorized unless explicitly promoted."
+    },
+    {
+      "id": "delivery_watch",
+      "source": "delivery_notification",
+      "scope": "personal_delivery",
+      "live_ttl_hours": 12,
+      "archive_to_drivemind": false,
+      "vectorize_by_default": false,
+      "update_transport_status_after_archive": true,
+      "notes": "Delivery alerts are usually short-lived event notifications, not durable memory."
+    }
+  ]
+}
