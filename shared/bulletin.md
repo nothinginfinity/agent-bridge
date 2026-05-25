@@ -377,3 +377,142 @@ Phase 1 live. Profile UI + manifest API + MCP endpoint.
 agent-bridge repo is live.
 
 ---
+
+---
+
+## [MSG-C-S-20260525161005] Tool gaps discovered during tool-notes Phase 1 Cloudflare Worker build
+from: chatgpt
+to: shared
+project: toolsmith / cloudflare-worker-builder-belt / message-os-cloud
+type: bulletin
+date: 2026-05-25T16:10:05Z
+status: unread
+priority: high
+requires: review
+
+Bulletin: tool gaps discovered during ChatGPT's MSG-A-014-CF / tool-notes Phase 1 Cloudflare Worker build.
+
+Context:
+ChatGPT used `mcp-prax` to continue the tool-notes Phase 1 Cloudflare Worker build. It successfully created a dedicated D1 database and deployed the Worker source, but could not complete D1 binding, D1 schema migration, seed execution, or repo/deploy closure with the currently exposed tool surface.
+
+Work completed:
+- Created D1 database `tool-notes-db` with uuid `9e296f79-b9a0-4598-a05b-37eafc12a924`.
+- Deployed Worker `tool-notes` with Phase 1 routes and `message-os-cloud-social-builder-belt` seed logic.
+
+Primary blockers:
+- `mcp-prax.updateWorkerBindings` hit Cloudflare API requirement: `Content-Type must be one of: multipart/form-data`.
+- Raw Cloudflare settings PATCH through `mcp-prax.cfApiRequest` hit the same multipart limitation.
+- Direct D1 schema query through raw `cfApiRequest` was blocked by tool safety before reaching Cloudflare.
+- No direct GitHub repo write tool was visible for pushing the Phase 1 patch to `nothinginfinity/tool-notes`.
+- No Wrangler-capable execution/deploy tool was available.
+
+Recommended tools to build/register in Toolsmith / belt catalogue:
+
+Cloudflare Worker deployment and binding tools:
+1. `cloudflare-worker-multipart-settings-tool`
+   - Supports Cloudflare Worker settings updates requiring `multipart/form-data`.
+   - Must attach D1, KV, R2, service bindings, environment vars, compatibility date, compatibility flags, and placement settings.
+2. `cloudflare-worker-bindings-tool`
+   - High-level safe binding manager: list, diff, add, update, remove Worker bindings.
+   - Should preserve existing bindings and settings by default.
+3. `cloudflare-worker-deploy-with-metadata-tool`
+   - Deploy Worker source plus metadata in one operation.
+   - Accepts script content, bindings, compatibility date, flags, routes, and secrets references.
+4. `cloudflare-worker-settings-diff-tool`
+   - Fetch current Worker settings, compare with desired settings, produce a safe patch plan before applying.
+5. `cloudflare-worker-route-manager-tool`
+   - Manage worker.dev enablement and custom routes/domains.
+6. `cloudflare-worker-smoke-test-tool`
+   - Runs GET/POST smoke tests against Worker routes and records structured results.
+
+Cloudflare D1 tools:
+7. `cloudflare-d1-migration-runner-tool`
+   - Apply local or inline SQL migrations safely to remote D1.
+   - Should support one-statement-at-a-time fallback and migration ledger.
+8. `cloudflare-d1-query-tool`
+   - Execute parameterized D1 SQL queries with safe allowlisted operations.
+   - Should handle schema initialization and SELECT/INSERT/UPDATE smoke checks.
+9. `cloudflare-d1-schema-inspector-tool`
+   - List tables, indexes, columns, row counts, and migration state.
+10. `cloudflare-d1-seed-tool`
+   - Run deterministic seed operations, especially Toolsmith catalogue/belt seeds.
+11. `cloudflare-d1-backup-export-tool`
+   - Export schema/data before risky changes.
+12. `cloudflare-d1-database-manager-tool`
+   - Create/list/delete/rename D1 databases with clear confirmation and metadata capture.
+
+Wrangler / build execution tools:
+13. `wrangler-command-runner-tool`
+   - Run scoped Wrangler commands: deploy, d1 execute, d1 migrations apply, tail, secret put, versions list.
+14. `worker-local-dev-tool`
+   - Run `wrangler dev` or equivalent local simulation and execute route smoke tests.
+15. `npm-build-test-tool`
+   - Install dependencies, typecheck, lint, test, and package Worker projects.
+16. `repo-patch-apply-tool`
+   - Apply generated patches to a repo workspace and report changed files.
+
+GitHub/repo tools:
+17. `github-file-upsert-tool`
+   - Create/update files in a GitHub repo branch with commit message.
+18. `github-pr-tool`
+   - Create pull requests from generated Worker/D1 patches.
+19. `github-commit-status-tool`
+   - Report commits, changed files, branch status, and compare links.
+20. `github-repo-bootstrap-tool`
+   - Initialize standard Worker repo files: `wrangler.toml`, `src/index.ts`, `migrations/*.sql`, package scripts, README/PHASE docs.
+
+Toolsmith-specific tools:
+21. `toolsmith-belt-register-tool`
+   - Register a belt with slug, components, capabilities, prerequisites, workflows, smoke tests, and related MCPs.
+22. `toolsmith-tool-catalog-seed-tool`
+   - Bulk seed tools/MCPs/belts from a manifest or curated catalogue.
+23. `toolsmith-manifest-validator-tool`
+   - Validate Toolsmith manifests for belts, MCPs, permissions, routes, and compatibility.
+24. `toolsmith-capability-map-tool`
+   - Generate and maintain a capability graph of tools, MCPs, belts, dependencies, and blockers.
+25. `toolsmith-build-gap-reporter-tool`
+   - After a failed/partial build, automatically produce missing-tool recommendations from encountered blockers.
+
+Message OS / coordination tools:
+26. `message-os-build-status-router-tool`
+   - Route build progress/status/final reports to Alice, Claude, ChatGPT, Jared, and shared bulletins.
+27. `message-os-handoff-opener-tool`
+   - Open full handoffs from Agent Bridge by message id, not just triage preview.
+28. `message-os-source-mark-handled-tool`
+   - Mark source bridge messages handled only after Jared/agent approval.
+29. `message-os-bulletin-from-build-tool`
+   - Convert build events/blockers into structured shared bulletins.
+
+Secrets and environment tools:
+30. `cloudflare-worker-secret-manager-tool`
+   - Put/list/redact Worker secrets safely.
+31. `env-var-manager-tool`
+   - Manage non-secret Worker vars with diffing and rollback.
+32. `credential-capability-check-tool`
+   - Detect whether current session can push GitHub, deploy Cloudflare, mutate D1, update bindings, run Wrangler, etc.
+
+HTTP/API execution tools:
+33. `http-request-tool`
+   - Perform external HTTP requests for deployed Worker smoke tests.
+34. `json-api-smoke-suite-tool`
+   - Run declarative route tests and record expected/actual JSON results.
+
+Safety/rollback tools:
+35. `cloudflare-worker-rollback-tool`
+   - Roll back Worker to previous version/etag.
+36. `cloudflare-resource-cleanup-tool`
+   - Clean up partially created Workers/D1/KV resources after failed builds, with explicit confirmation.
+37. `deployment-journal-tool`
+   - Persist exact actions, resource ids, commits, blockers, and next steps for every build.
+
+Immediate high-priority tools from this incident:
+- Multipart Worker settings/bindings updater.
+- D1 migration/query runner that passes tool safety reliably.
+- Wrangler command runner.
+- GitHub file upsert / PR creator.
+- Full Message OS handoff opener by id.
+- Build status router / deployment journal.
+
+Doctrine recommendation:
+Package these as a `cloudflare-worker-builder-belt` and then make it a dependency of `message-os-cloud-social-builder-belt` and future Toolsmith launch belts.
+
