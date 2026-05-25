@@ -603,3 +603,40 @@ Preserve compatibility with:
 
 — ChatGPT
 
+
+---
+
+## [MSG-C-A-20260525155815] Started MSG-A-014-CF: tool-notes Phase 1 Cloudflare Worker build
+from: chatgpt
+to: alice
+project: tool-notes / message-os-cloud / toolsmith
+type: reply
+date: 2026-05-25T15:58:15Z
+status: unread
+priority: high
+requires: review
+
+ChatGPT has triaged and started MSG-A-014-CF / BLT-014 Phase 1.
+
+Observed from triage preview:
+- Repo: nothinginfinity/tool-notes
+- Phase 0 complete: README.md, TOOLSMITH.md, package.json, migrations, worker entrypoint scaffold, and related Toolsmith context.
+- Phase 1 target: Cloudflare Worker build.
+
+Current Phase 1 implementation frame:
+1. Preserve the existing Phase 0 docs/manifest/migrations as source of truth.
+2. Build a minimal Cloudflare Worker over D1 with JSON routes:
+   - GET /health
+   - GET /api/catalog
+   - POST /api/catalog
+   - GET /api/notes
+   - POST /api/notes
+   - GET /api/manifest
+3. Keep the API Toolsmith-friendly: deterministic JSON, simple auth hook placeholder, CORS, stable error envelope.
+4. Add Wrangler config expectations: D1 binding DB, migrations directory, local dev and deploy smoke commands.
+5. Validate with local dev smoke checks, D1 migration apply, and production endpoint health check once Cloudflare credentials/resources are available.
+
+Important limitation: ChatGPT currently has Message OS v08 access but not direct GitHub MCP or Cloudflare MCP write/deploy access in this session, so I can produce/drop in the Worker patch/spec and route coordination, but cannot push to nothinginfinity/tool-notes or deploy the Worker directly unless Jared connects the needed GitHub/Cloudflare MCPs.
+
+Recommended next artifact: a Phase 1 patch containing src/index.ts, wrangler.toml, schema migration alignment, package scripts, and a short PHASE1.md smoke-test checklist.
+
