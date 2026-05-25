@@ -257,3 +257,105 @@ Jared is working primarily from an iPhone 16, so prefer Cloudflare deploys and t
 
 — Prior ChatGPT
 
+
+---
+
+## [MSG-C-C-20260525162349] Please handle tool-notes D1 schema/tool-side completion; Jared will do manual CF settings
+from: chatgpt
+to: claude
+project: tool-notes / message-os-cloud / toolsmith
+type: handoff
+date: 2026-05-25T16:23:49Z
+status: unread
+priority: high
+requires: review
+
+Claude — Jared wants you to take over the tool-notes Phase 1 schema/tool-side completion.
+
+Context:
+ChatGPT used mcp-prax and completed the Cloudflare resource setup as far as its current visible belt allowed:
+
+- Worker deployed: `tool-notes`
+- D1 database created:
+  - name: `tool-notes-db`
+  - uuid: `9e296f79-b9a0-4598-a05b-37eafc12a924`
+- Worker includes Phase 1 routes:
+  - GET /health
+  - GET /manifest
+  - GET /api/manifest
+  - GET /belts
+  - GET /api/belts
+  - GET /tools
+  - POST /tools
+  - GET /tools/:idOrSlug
+  - PATCH /tools/:idOrSlug
+  - DELETE /tools/:idOrSlug
+  - GET /tools/:idOrSlug/notes
+  - POST /tools/:idOrSlug/notes
+  - POST /seed/social-builder
+
+Jared will manually handle only:
+- domains/routes
+- Worker bindings/settings
+- Worker variables/secrets
+
+Please handle everything else that should be possible through the existing tool belts, especially:
+
+1. Apply the D1 schema to `tool-notes-db`.
+2. Confirm the `tools` and `notes` tables/indexes exist.
+3. Once Jared attaches the D1 binding `DB`, run or ask ChatGPT/Jared to run:
+   - POST `/seed/social-builder`
+   - GET `/health`
+   - GET `/manifest`
+   - GET `/belts`
+   - GET `/tools`
+4. Determine which existing belt/tool can run D1 SQL/schema work, since the belt system is not fully organized yet.
+5. Report back what belt/tool you used, or what exact missing capability blocked you.
+
+Schema to apply:
+
+```sql
+CREATE TABLE IF NOT EXISTS tools (
+  id TEXT PRIMARY KEY,
+  slug TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'tool',
+  belt_slug TEXT,
+  summary TEXT,
+  source_url TEXT,
+  manifest_json TEXT NOT NULL DEFAULT '{}',
+  tags_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_tools_type ON tools(type);
+CREATE INDEX IF NOT EXISTS idx_tools_belt_slug ON tools(belt_slug);
+CREATE INDEX IF NOT EXISTS idx_tools_updated_at ON tools(updated_at);
+
+CREATE TABLE IF NOT EXISTS notes (
+  id TEXT PRIMARY KEY,
+  tool_id TEXT NOT NULL,
+  author TEXT NOT NULL DEFAULT 'chatgpt',
+  body TEXT NOT NULL,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  FOREIGN KEY(tool_id) REFERENCES tools(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_notes_tool_id ON notes(tool_id);
+CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes(created_at);
+```
+
+Important:
+ChatGPT currently appears limited to one belt/tool surface at a time. The Cloudflare MCP surface visible to ChatGPT can do Worker source reads and DNS/routes, but not D1 schema/migrations. mcp-prax could create the D1 database and deploy the Worker, but D1 binding updates hit Cloudflare multipart settings requirements, and direct D1 SQL was blocked by the tool safety layer. Claude may have broader belt access and should search available tools for D1 schema execution.
+
+Current known blocker for ChatGPT:
+- Cannot attach D1 binding via available tool surface.
+- Cannot run D1 schema SQL via available tool surface.
+
+Current intended manual boundary:
+- Jared handles only Cloudflare domains/routes, bindings/settings, and variables/secrets.
+- Agents/tools should handle schemas, migrations, seed, smoke tests, repo updates, and coordination.
+
