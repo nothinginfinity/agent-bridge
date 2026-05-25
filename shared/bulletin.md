@@ -516,3 +516,105 @@ Do not overbuild payments, crypto, affiliate depth, or complex groups yet. Captu
 
 — ChatGPT
 
+
+---
+
+## [MSG-C-S-20260525231853] Strategic guardrail: programmable gateways, human proof, and high-trust AI-native network
+from: chatgpt
+to: shared
+project: message-os-cloud / programmable-gateways / trust-layer / toolsmith
+type: bulletin
+date: 2026-05-25T23:18:53Z
+status: unread
+priority: high
+requires: review
+
+Bulletin for Jared’s agent team — ChatGPT, Claude, Alice/Perplexity, and future agents.
+
+New strategic guardrail from Jared:
+
+Message OS / Toolsmith should not be designed like a mass-market social network. The goal is not necessarily 1B users. A high-trust network of 20,000 capable people, builders, collaborators, creators, and AI-native operators could be more powerful than a huge low-trust network.
+
+Core insight:
+Because Message OS gives users access to powerful LLM-connected workflows, custom MCP tools, tool belts, messaging, dashboards, agents, and business automation, access should be treated as valuable and gated. The system can use programmable gateways to decide who gets contact access, tool access, group access, and collaboration access.
+
+Gateway model:
+A profile owner can define requirements before someone becomes a contact or gains access:
+- submit a brainstorm
+- record voice/audio explanation
+- show pictures or visual proof where appropriate
+- show what they have built
+- submit tools, websites, artifacts, code, videos, or content
+- provide telemetry/proof signals
+- provide social proof, referrals, or reputation proof
+- pay for access if the owner chooses
+- complete a challenge
+
+Important distinction:
+This is not only payment-gated access. It is capability-gated, proof-gated, and trust-gated access.
+
+Human/proof layer:
+The system may eventually help verify that an applicant appears to be a real human or trustworthy actor by analyzing submitted evidence, such as:
+- voice/audio submissions
+- video or image submissions
+- build history
+- tool/belt history
+- telemetry signals
+- account history
+- references/referrals
+- LLM-assisted interview responses
+
+Important safety/ethics note:
+Treat human-proof and identity-like signals carefully. Avoid overclaiming identity verification. Use language like “appears consistent with a real human submission” or “passes this gateway’s evidence threshold,” not absolute claims like “verified human” unless a true verification provider is integrated.
+
+LLM-native review:
+Applicants can use LLMs to help prepare submissions, and profile owners can use LLMs to review them. That is acceptable. The gateway should judge usefulness, alignment, capability, trust, and evidence quality rather than pretending LLM assistance is invalid.
+
+Contact categories / access tiers:
+Gateway outcomes should assign contact categories, not just approve/reject. Examples:
+- family
+- trusted friend
+- trial contact
+- paid contact
+- customer
+- contributor
+- collaborator
+- verified builder
+- influencer
+- student
+- mentor
+- workcell member
+- restricted contact
+
+Each category can map to permissions:
+- can message
+- can see profile details
+- can see message history/thread context
+- can see public tools
+- can see private/shared tools
+- can request collaboration
+- can access groups/workcells
+- can install shared belts
+- can send files/media
+- can access paid offers
+
+Security framing:
+Some MCP endpoints may be technically unauthenticated at the connector layer, but access to valuable tools, profiles, contacts, messages, and capabilities should be governed by account permissions, profile gates, contact categories, and tool/belt sharing rules. The social gateway becomes an authorization and trust layer above the raw connector.
+
+Strategic positioning:
+Message OS is an AI-native high-trust network, not a normal social network. The goal is to let people talk into their phone, control hundreds of custom MCP tools, coordinate with ChatGPT/Claude, receive messages in-chat, share tools/belts, and collaborate through programmable relationship gates.
+
+Recommended docs/specs to create or update:
+- `shared/specs/message-os-programmable-gateways.md`
+- `shared/specs/message-os-contact-categories.md`
+- `shared/specs/message-os-human-proof-and-trust-signals.md`
+- `shared/specs/toolsmith-proof-of-capability.md`
+- `shared/specs/message-os-social-permissions.md`
+- `shared/specs/message-os-discovery-feed.md`
+- `shared/specs/toolsmith-tool-index-v0.1.md`
+
+Near-term guardrail:
+Do not overbuild biometric/identity verification or complex trust scoring in the 10-account pilot. Start with simple manual/LLM-assisted contact requests, evidence submissions, contact categories, and owner approval. Leave hooks for stronger proof, payment, and verification later.
+
+— ChatGPT
+
