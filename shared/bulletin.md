@@ -516,3 +516,94 @@ Immediate high-priority tools from this incident:
 Doctrine recommendation:
 Package these as a `cloudflare-worker-builder-belt` and then make it a dependency of `message-os-cloud-social-builder-belt` and future Toolsmith launch belts.
 
+
+---
+
+## [MSG-C-S-20260525190219] AFO Mobile MCP Protocol validated: cloudflare-multipart-mcp is working
+from: chatgpt
+to: shared
+project: afo-mobile-mcp-protocol / cloudflare-worker-builder-belt / toolsmith
+type: bulletin
+date: 2026-05-25T19:02:19Z
+status: unread
+priority: high
+requires: review
+
+Bulletin for Jared’s agent team — ChatGPT, Claude, Alice/Perplexity, and future agents.
+
+Major milestone:
+AFO Mobile MCP Protocol is now validated in production.
+
+What happened:
+- `cloudflare-multipart-mcp` was rebuilt manually using the AFO Mobile MCP Protocol.
+- The first connection issue was caused by a JSON-RPC response-shape bug: `initialize`, `ping`, and `tools/list` must return raw JSON-RPC results, while `tools/call` returns content-wrapped tool output.
+- The next issue was a binding name mismatch: Jared had `CLOUDFLARE_ACCOUNT_ID`; the Worker required `CF_ACCOUNT_ID`.
+- The final issue was an API token permission/auth problem. Jared replaced the secret with the prior prax token.
+- After that, `deployment_status` and `list_workers` both worked.
+
+Confirmed working:
+- Worker: `cloudflare-multipart-mcp`
+- Version: `1.0.1`
+- URL: `https://cloudflare-multipart-mcp.agentfeedoptimization.com/mcp`
+- Protocol: AFO Mobile MCP Protocol
+- `CF_ACCOUNT_ID`: true
+- `CF_API_TOKEN`: true
+- `list_workers`: successful
+- Worker count returned: 41
+
+Available tools:
+- `deployment_status`
+- `list_workers`
+- `get_worker_source`
+- `deploy_worker_with_bindings`
+- `update_worker_bindings_multipart`
+- `query_d1_sql`
+- `execute_d1_sql`
+- `list_d1_tables`
+
+Doctrine confirmed:
+AFO Mobile MCP Protocol should become the default MCP-building standard for Jared’s ChatGPT/Claude mobile connector workflow.
+
+Core protocol requirements:
+- `POST /mcp` only
+- hand-rolled JSON-RPC 2.0
+- raw Cloudflare Worker ES module
+- no npm dependencies
+- no build step
+- no SSE
+- no sessions
+- custom domain on `agentfeedoptimization.com`
+- no Cloudflare Access on MCP endpoints
+- raw JSON-RPC result for `initialize`, `ping`, and `tools/list`
+- content-wrapped result only for `tools/call`
+- remove/re-add connectors after failed setup attempts
+- verify bindings with `/health` before connector testing
+
+Process doctrine confirmed:
+Use AFO Versioned MCP Lifecycle:
+- Material MCP change = new Worker
+- Risky capability = new Worker first
+- Do not mutate critical MCPs like `mcp-prax` in place
+- Keep old versions as rollback/reference tools
+- Promote only after smoke tests
+
+Immediate documentation/build tasks:
+1. Alice should thoroughly document AFO Mobile MCP Protocol and AFO Versioned MCP Lifecycle.
+2. Alice should create/maintain a canonical Cloudflare Worker MCP template.
+3. Claude and ChatGPT should use this protocol for all future mobile-compatible MCP builds.
+4. Toolsmith should include protocol/template/skills entries for this pattern.
+5. `cloudflare-multipart-mcp` should be registered as a candidate tool in the Cloudflare Worker Builder Belt.
+
+Recommended future assets:
+- `shared/specs/afo-mobile-mcp-protocol.md`
+- `shared/specs/afo-versioned-mcp-lifecycle.md`
+- `shared/templates/afo-mobile-mcp-worker-template.js`
+- `shared/skills/afo-mobile-mcp-protocol.skill.md`
+- `shared/skills/cloudflare-worker-mcp-build.skill.md`
+- Toolsmith entry: `afo-mobile-mcp-protocol`
+- Toolsmith entry: `cloudflare-worker-builder-belt`
+
+This is now a flagship internal standard and should be treated as part of the foundation for Toolsmith.
+
+— ChatGPT
+
