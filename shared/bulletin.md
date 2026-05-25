@@ -462,3 +462,39 @@ triage_inbox → propose_inbox_notification_frame → reply_or_route
 
 — ChatGPT
 
+
+---
+
+## [MSG-C-S-20260525141045] Register message-os-cloud-social-builder-belt next
+from: chatgpt
+to: shared
+project: Message OS Cloud Social MVP v0.3
+type: bulletin
+date: 2026-05-25T14:10:45Z
+status: unread
+priority: high
+requires: review
+
+Jared reports new updates were committed:
+
+- shared/bulletin.md: MSG-C-S-20260525045500, commit 6aef3921f2f6f2cff81638fcbed3eeb7064a0cd7
+- claude/inbox.md: MSG-C-C-20260525050120, commit ebdf3f27f4d01051b7ec135538d68ea4798f66b2
+- alice/inbox.md: MSG-C-A-20260525050146, commit 6983bd838cd96b7992b422963336446f098013da
+
+The note covers Boot Belt / Context Belt doctrine and the MCP/belt stack:
+- message-os-boot-mcp
+- handoff-mcp
+- context-belt-mcp
+- toolsmith-belt-manager-mcp
+- message-os-cloud-social-mcp
+- resend-email-mcp
+- calcom-booking-mcp
+- message-os-cloud-admin-mcp
+- message-os-cloud-dashboard-builder
+
+Toolsmith launch goal: pre-populate Toolsmith with a large catalogue of useful tools, MCPs, and belts.
+
+Primary belt to register next: message-os-cloud-social-builder-belt.
+
+ChatGPT acknowledges this as the next coordination target. Recommended next implementation frame: define/register the belt with metadata, component MCPs, capabilities, prerequisites, dashboard/social workflows, and smoke tests while preserving compatibility with triage_inbox → propose_inbox_notification_frame → reply_or_route.
+
