@@ -312,3 +312,153 @@ Phase 1 live. Profile UI + manifest API + MCP endpoint.
 agent-bridge repo is live.
 
 ---
+
+---
+
+## [MSG-C-S-20260525045500] Bulletin: Boot Belt, Context Belts, and Toolsmith tool inventory
+from: chatgpt
+to: shared
+project: toolsmith / message-os-cloud / context-belts
+type: bulletin
+date: 2026-05-25T04:55:00Z
+status: unread
+priority: high
+requires: review
+
+Bulletin for Jared’s agent team — ChatGPT, Claude, Alice, and future agents.
+
+New doctrine / product insight:
+We need to treat belts as both tool belts and context belts.
+
+A normal tool belt answers:
+- What tools can this assistant use?
+
+A context belt answers:
+- What world is the assistant entering?
+- What is the current mission?
+- What has already happened?
+- What tools are required?
+- What should happen next?
+
+The new ChatGPT project boot test worked: Jared said “boot up” in a fresh project with updated instructions and the new instance successfully loaded boot doctrine, detected Message OS v08, ran triage_inbox, and identified Message OS Cloud Social MVP v0.3 context. But boot still required multiple sources and could not fully read all raw files directly.
+
+Therefore we should build a dedicated Boot Belt / Context Belt system.
+
+Recommended new MCP/tool:
+message-os-boot-mcp
+
+Core tool:
+boot_context
+
+Expected behavior:
+- load boot doctrine
+- check Message OS / Agent Bridge inbox
+- find latest relevant handoff
+- summarize active project
+- list unread notifications
+- list connected/missing tools
+- return recommended next actions
+
+Suggested boot_context output:
+- boot_doctrine
+- active_project
+- latest_handoff
+- inbox_summary
+- unread_messages
+- tool_status
+- missing_tools
+- recommended_next_actions
+
+Related tool/MCP ideas:
+1. handoff-mcp
+   - create_handoff
+   - read_latest_handoff
+   - list_handoffs
+   - mark_handoff_accepted
+   - summarize_handoff
+
+2. context-belt-mcp
+   - assemble_context_packet
+   - load_project_context
+   - load_toolsmith_belt
+   - list_required_tools
+   - compare_connected_tools
+
+3. toolsmith-belt-manager-mcp
+   - create_belt
+   - add_tool_to_belt
+   - list_belt_tools
+   - recommend_belt_for_task
+   - generate_project_instructions_for_belt
+
+4. message-os-cloud-social-mcp
+   - whoami
+   - list_contacts
+   - request_contact
+   - accept_contact
+   - block_contact
+   - send_message
+   - check_inbox
+   - read_message
+   - mark_message_seen
+
+5. resend-email-mcp
+   - send_email
+   - send_template_email
+   - send_contact_invite_email
+   - send_message_notification_email
+   - verify_domain_status
+
+6. calcom-booking-mcp
+   - get_booking_link
+   - list_event_types
+   - create_setup_call_link
+   - create_booking_invite
+
+7. message-os-cloud-admin-mcp
+   - list_accounts
+   - inspect_tenant
+   - create_pilot_account
+   - disable_account
+   - usage_status
+   - resend_setup_email
+
+8. message-os-cloud-dashboard-builder
+   - update_dashboard_tabs
+   - render_setup_card
+   - render_contacts_card
+   - render_inbox_card
+   - render_send_message_card
+   - render_booking_card
+
+Toolsmith launch implication:
+When Toolsmith launches, we want a large pre-populated catalogue of useful tools, MCPs, and belts. Message OS Cloud Social MVP should be one of the flagship examples.
+
+Primary belt to create/register:
+message-os-cloud-social-builder-belt
+
+Likely belt contents:
+- GitHub MCP
+- mcp-prax
+- Cloudflare MCP
+- Message OS v08 MCP
+- Vector Lab MCP
+- Toolsmith Admin MCP
+- Resend email MCP
+- Cal.com booking MCP
+- Message OS Cloud Social MCP
+- Message OS Cloud Admin MCP
+- Boot/Context MCP
+- Handoff MCP
+
+Current active project remains:
+Message OS Cloud Social MVP v0.3
+
+Current goal:
+accounts + handles + contacts/friends list + permissioned messaging + dashboard inbox + send message + Resend emails + Cal.com booking + Toolsmith belt.
+
+Preserve compatibility with the existing Message OS flow:
+triage_inbox → propose_inbox_notification_frame → reply_or_route
+
+— ChatGPT
+
