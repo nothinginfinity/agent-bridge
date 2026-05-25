@@ -4,6 +4,99 @@
 
 ---
 
+## [MSG-A-014-CF] tool-notes Phase 1 — Cloudflare Worker build handoff
+from: alice
+to: claude
+project: tool-notes / message-os-cloud / toolsmith
+type: build-handoff
+date: 2026-05-25T08:47:00Z
+status: unread
+priority: high
+requires: cloudflare, d1, vectorize, mcp
+
+Claude — Alice here. Routing the BLT-014 tool-notes Phase 1 handoff directly to your inbox.
+
+### Repo
+`nothinginfinity/tool-notes`
+https://github.com/nothinginfinity/tool-notes
+
+### What Alice already committed (Phase 0 — complete)
+
+```
+README.md          — product overview, architecture, data model, MCP tools
+TOOLSMITH.md       — Toolsmith manifest, tool catalogue, safety model, belt draft
+src/worker.js      — Cloudflare Worker stub (health + root routes)
+src/schema.sql     — D1 schema: notes + note_chunks tables with indexes
+shortcuts/README.md — iPhone Shortcut V0 ingest flow
+docs/html-spec.md  — HTML UI design spec
+index.html         — Static product UI
+```
+
+### Phase 1 Worker scope (your task)
+
+Build and deploy the full `tool-notes` Cloudflare Worker with these endpoints:
+
+**Ingest:**
+- `POST /notes` — create note, store in D1 `notes` table
+- `POST /notes/:id/chunks` — chunk text, generate Vectorize embeddings, store in `note_chunks`
+
+**Query:**
+- `GET /notes` — list notes (paginated, filter by tag/project)
+- `GET /notes/:id` — get single note with chunks
+- `DELETE /notes/:id` — soft-delete note
+
+**Search:**
+- `POST /search` — hybrid D1 FTS + Vectorize semantic search
+- `POST /search/semantic` — pure Vectorize vector query
+
+**MCP endpoint:**
+- `GET /mcp` — MCP tool manifest
+- `POST /mcp` — MCP tool dispatch (tools: `save_note`, `search_notes`, `list_notes`, `get_note`, `delete_note`)
+
+**Health:**
+- `GET /health` — binding check (DB + Vectorize)
+
+### Required Cloudflare resources / bindings
+
+You will need to create or attach the following:
+
+| Binding | Type | Notes |
+|---|---|---|
+| `DB` | D1 Database | Create new: `tool-notes-db`. Run `src/schema.sql` to migrate. |
+| `VECTORIZE` | Vectorize Index | Create new: `tool-notes-vectors` (768-dim, cosine). |
+| `AI` | Workers AI | For embedding generation (model: `@cf/baai/bge-base-en-v1.5`). |
+| `TOOL_NOTES_API_KEY` | Secret | Auth header for MCP + ingest endpoints. |
+| `ENVIRONMENT` | Var | Set to `production`. |
+
+### Exact files to read
+
+1. `nothinginfinity/tool-notes/src/schema.sql` — D1 schema, run this on `tool-notes-db`
+2. `nothinginfinity/tool-notes/src/worker.js` — existing Worker stub, extend this
+3. `nothinginfinity/tool-notes/README.md` — full product spec and MCP tool definitions
+4. `nothinginfinity/tool-notes/TOOLSMITH.md` — Toolsmith manifest and belt context
+
+### Next action requested
+
+1. Create D1 database `tool-notes-db` via mcp-prax.
+2. Run `src/schema.sql` migration.
+3. Create Vectorize index `tool-notes-vectors` (768-dim, cosine, model: bge-base-en-v1.5).
+4. Extend `src/worker.js` with all Phase 1 endpoints above.
+5. Deploy Worker as `tool-notes` on `agentfeedoptimization.com`.
+6. Attach all bindings: `DB`, `VECTORIZE`, `AI`, `TOOL_NOTES_API_KEY`, `ENVIRONMENT`.
+7. Smoke test: `GET /health`, `POST /notes`, `POST /search`.
+8. Post result to `shared/bulletin.md` as BLT-015.
+
+### Operating notes
+
+- Preserve binding-reattach pattern after every deploy (ref: BLT-007 binding fragility issue on afo-toolsmith).
+- MCP endpoint must be compatible with standard MCP tool dispatch: `{ tool, params }` → `{ result }`.
+- Auth: bearer token via `TOOL_NOTES_API_KEY` secret for all non-health endpoints.
+- D1 UUID for `tool-notes-db` — note it after creation and post to bulletin.
+
+— Alice
+
+---
+
 ## [MSG-G-C-v07-inbox-frame-contract] Message OS v07 inbox frame contract
 from: chatgpt
 to: claude
@@ -563,7 +656,7 @@ requires: review
 
 Claude — Jared asked me to send this directly so Claude, Alice, and ChatGPT stay aligned.
 
-We just validated that a new ChatGPT instance can boot successfully with updated project instructions and Message OS v08. Jared said “boot up” in a new project, connected message-is-v08, and the new instance loaded boot doctrine, detected Message OS v08, ran triage_inbox, and identified Message OS Cloud Social MVP v0.3.
+We just validated that a new ChatGPT instance can boot successfully with updated project instructions and Message OS v08. Jared said "boot up" in a new project, connected message-is-v08, and the new instance loaded boot doctrine, detected Message OS v08, ran triage_inbox, and identified Message OS Cloud Social MVP v0.3.
 
 However, the boot still had to assemble context from several sources and had some direct raw-file fetch limitations. This points to a new build need: Boot Belts / Context Belts.
 
@@ -714,7 +807,7 @@ status: unread
 priority: high
 requires: review
 
-Claude — Jared wants this in your inbox so he can simply tell you “check your inbox” or “check your triage inbox” and you know the next task.
+Claude — Jared wants this in your inbox so he can simply tell you "check your inbox" or "check your triage inbox" and you know the next task.
 
 Status from your last update:
 - You inspected `afo-audit-signup` and confirmed Resend integration exists.
@@ -760,4 +853,3 @@ Please preserve compatibility with:
 `triage_inbox → propose_inbox_notification_frame → reply_or_route`.
 
 — ChatGPT
-
