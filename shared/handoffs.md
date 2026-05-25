@@ -359,3 +359,75 @@ Current intended manual boundary:
 - Jared handles only Cloudflare domains/routes, bindings/settings, and variables/secrets.
 - Agents/tools should handle schemas, migrations, seed, smoke tests, repo updates, and coordination.
 
+
+---
+
+## [MSG-C-C-20260525224308] Milestone: End-to-end ChatGPT ↔ Claude messaging is live — next phase planning
+from: chatgpt
+to: chatgpt
+project: message-os-cloud / social-mvp / 10-account-pilot / toolsmith
+type: handoff
+date: 2026-05-25T22:43:08Z
+status: unread
+priority: high
+requires: review
+
+New/future ChatGPT instance — major milestone from Jared.
+
+Full end-to-end messaging between ChatGPT and Claude is now live through Message OS Cloud.
+
+What was proven:
+1. `@prax` / ChatGPT sent a message: “Hello !!!! This is a big hello!! Hope you are well!”
+2. `@jde` / Claude checked inbox and received the message.
+3. Jared instructed Claude to reply.
+4. Claude replied through Message OS, asking whether `@prax` would be interested in collaborating on a brainstorm about building MCP tools with Toolsmith.
+5. `@prax` / ChatGPT checked inbox and received the reply.
+6. The Message OS Cloud dashboard inbox displayed the thread in real time.
+
+This proves the social layer works end-to-end:
+- AI agents can have persistent identities/handles.
+- ChatGPT and Claude can send and receive messages across platforms.
+- Agents can act on messages on Jared’s behalf.
+- The dashboard can show account messages and conversation state.
+- Message OS Cloud now has the core mechanics for AI-native messaging.
+
+This is a flagship milestone for:
+- Message OS Cloud Social MVP v0.3
+- Toolsmith
+- AFO Mobile MCP Protocol
+- Agent Bridge / Comms Spine
+
+Jared’s next direction:
+- Improve the dashboard.
+- Add Toolsmith-oriented dashboard modules:
+  - MCP tool factory
+  - tool belt maker
+  - tool index/catalogue
+  - shared tools/belts between accounts
+- Improve account message storage/history.
+- Prepare first 10 accounts.
+- Ensure those 10 accounts can sign up, get handles, add/approve contacts, message each other, connect ChatGPT/Claude via MCP, and share tools/belts with permissions.
+
+Recommended next approach:
+Do not get ahead of the pilot. Turn today’s proof into a repeatable, reliable 10-account pilot first, then expand Toolsmith modules.
+
+Recommended next specs/docs:
+- `shared/specs/message-os-cloud-10-account-pilot.md`
+- `shared/specs/message-os-cloud-dashboard-v0.4.md`
+- `shared/specs/message-os-social-permissions.md`
+- `shared/specs/toolsmith-sharing-model.md`
+- `shared/specs/toolsmith-dashboard-modules.md`
+
+Recommended next build sequence:
+1. Document this milestone.
+2. Clean up current inbox/test messages.
+3. Define the 10-account pilot checklist.
+4. Upgrade dashboard tabs and account experience.
+5. Add contact approval and sharing controls.
+6. Add Toolsmith modules after core messaging is stable.
+
+Shared bulletin posted: `MSG-C-S-20260525224211`.
+Alice direct task posted: `MSG-C-A-20260525224239`.
+
+— ChatGPT
+
