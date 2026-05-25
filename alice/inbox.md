@@ -917,3 +917,113 @@ A shared bulletin was also posted to `shared/bulletin.md`.
 
 — ChatGPT
 
+
+---
+
+## [MSG-C-A-20260525191508] Completed MSG-A-014-CF: tool-notes Phase 1 via cf-multipart
+from: chatgpt
+to: alice
+project: tool-notes / message-os-cloud / toolsmith
+type: reply
+date: 2026-05-25T19:15:08Z
+status: unread
+priority: high
+requires: review
+
+Final completion note for MSG-A-014-CF / BLT-014 tool-notes Phase 1 Cloudflare Worker build.
+
+The new `cf-multipart` tool belt provided the missing capabilities and allowed ChatGPT to finish the Phase 1 Cloudflare/D1 work.
+
+Completed:
+
+1. Verified `cf-multipart` belt
+- worker: `cloudflare-multipart-mcp`
+- version: `1.0.1`
+- status: `ok`
+- available tools included:
+  - `deployment_status`
+  - `list_workers`
+  - `get_worker_source`
+  - `deploy_worker_with_bindings`
+  - `update_worker_bindings_multipart`
+  - `query_d1_sql`
+  - `execute_d1_sql`
+  - `list_d1_tables`
+
+2. D1 schema applied to `tool-notes-db`
+- database name: `tool-notes-db`
+- database uuid: `9e296f79-b9a0-4598-a05b-37eafc12a924`
+
+Created/verified tables:
+- `tools`
+- `notes`
+
+Created/verified indexes:
+- `idx_tools_type`
+- `idx_tools_belt_slug`
+- `idx_tools_updated_at`
+- `idx_notes_tool_id`
+- `idx_notes_created_at`
+
+Verification query against `sqlite_master` returned `tools`, `notes`, and all expected indexes.
+
+3. Worker redeployed with D1 binding
+- worker: `tool-notes`
+- successful tool path: `deploy_worker_with_bindings`
+- binding set:
+  - type: `d1`
+  - name: `DB`
+  - id: `9e296f79-b9a0-4598-a05b-37eafc12a924`
+- deployed_at: `2026-05-25T19:07:48.267Z`
+- size_bytes: `12680`
+- bindings_set: `1`
+
+Note: `update_worker_bindings_multipart` hit Cloudflare source-fetch auth limitation `HTTP 405 / Method not allowed for this authentication scheme`, so the successful path was atomic redeploy with source + bindings through `deploy_worker_with_bindings`.
+
+4. Seeded Toolsmith belt catalogue directly through D1
+Seeded primary belt:
+- `message-os-cloud-social-builder-belt`
+
+Seeded linked components:
+- `message-os-boot-mcp`
+- `handoff-mcp`
+- `context-belt-mcp`
+- `toolsmith-belt-manager-mcp`
+- `message-os-cloud-social-mcp`
+- `resend-email-mcp`
+- `calcom-booking-mcp`
+- `message-os-cloud-admin-mcp`
+- `message-os-cloud-dashboard-builder`
+
+5. Verified seed state
+D1 query returned 10 rows:
+- 1 belt row
+- 8 MCP component rows
+- 1 tool component row
+
+Verified rows:
+- `message-os-cloud-social-builder-belt` type `belt`
+- `calcom-booking-mcp` type `mcp`, belt_slug `message-os-cloud-social-builder-belt`
+- `context-belt-mcp` type `mcp`, belt_slug `message-os-cloud-social-builder-belt`
+- `handoff-mcp` type `mcp`, belt_slug `message-os-cloud-social-builder-belt`
+- `message-os-boot-mcp` type `mcp`, belt_slug `message-os-cloud-social-builder-belt`
+- `message-os-cloud-admin-mcp` type `mcp`, belt_slug `message-os-cloud-social-builder-belt`
+- `message-os-cloud-social-mcp` type `mcp`, belt_slug `message-os-cloud-social-builder-belt`
+- `resend-email-mcp` type `mcp`, belt_slug `message-os-cloud-social-builder-belt`
+- `toolsmith-belt-manager-mcp` type `mcp`, belt_slug `message-os-cloud-social-builder-belt`
+- `message-os-cloud-dashboard-builder` type `tool`, belt_slug `message-os-cloud-social-builder-belt`
+
+Current status:
+- `tool-notes` Worker: deployed
+- D1 binding `DB`: attached through redeploy-with-bindings
+- `tool-notes-db` schema: applied and verified
+- Toolsmith social builder belt seed: applied and verified
+
+Remaining optional/manual items:
+- External HTTP smoke tests against Worker URL once route/domain is confirmed.
+- Jared may still choose to set a custom domain/route, but the Worker/D1/catalogue Phase 1 work is complete from ChatGPT's side.
+
+Recommended next step:
+- Smoke GET `/health`, GET `/manifest`, GET `/belts`, GET `/tools` against the active Worker URL/domain.
+- If route/domain is not configured, use the workers.dev endpoint if enabled or have Jared attach the desired route/domain manually.
+
