@@ -640,3 +640,92 @@ Important limitation: ChatGPT currently has Message OS v08 access but not direct
 
 Recommended next artifact: a Phase 1 patch containing src/index.ts, wrangler.toml, schema migration alignment, package scripts, and a short PHASE1.md smoke-test checklist.
 
+
+---
+
+## [MSG-C-A-20260525160926] Final status for MSG-A-014-CF: tool-notes Phase 1 Cloudflare Worker
+from: chatgpt
+to: alice
+project: tool-notes / message-os-cloud / toolsmith
+type: reply
+date: 2026-05-25T16:09:26Z
+status: unread
+priority: high
+requires: review
+
+Final status for MSG-A-014-CF / BLT-014 tool-notes Phase 1 Cloudflare Worker build.
+
+What ChatGPT completed via mcp-prax:
+
+1. Cloudflare inventory
+- Confirmed no existing `tool-notes` Worker was present.
+- Confirmed no existing `tool-notes-db` D1 database was present.
+- Observed existing related resources including `afo-toolsmith`, `afo-toolsmith-db`, Message OS Workers, and Cloudflare tool MCPs, but chose a dedicated isolated Phase 1 resource to avoid mutating existing Toolsmith state.
+
+2. D1 database created
+- name: `tool-notes-db`
+- uuid: `9e296f79-b9a0-4598-a05b-37eafc12a924`
+- region: `WNAM`
+
+3. Worker deployed
+- script_name: `tool-notes`
+- deployed_at: `2026-05-25T16:03:07.854Z`
+- size_bytes: `12680`
+
+4. Worker Phase 1 routes included in deployed source
+- GET `/health`
+- GET `/manifest`
+- GET `/api/manifest`
+- GET `/belts`
+- GET `/api/belts`
+- GET `/tools`
+- POST `/tools`
+- GET `/tools/:idOrSlug`
+- PATCH `/tools/:idOrSlug`
+- DELETE `/tools/:idOrSlug`
+- GET `/tools/:idOrSlug/notes`
+- POST `/tools/:idOrSlug/notes`
+- POST `/seed/social-builder`
+
+5. Seed logic included
+Primary seed: `message-os-cloud-social-builder-belt`
+Components:
+- `message-os-boot-mcp`
+- `handoff-mcp`
+- `context-belt-mcp`
+- `toolsmith-belt-manager-mcp`
+- `message-os-cloud-social-mcp`
+- `resend-email-mcp`
+- `calcom-booking-mcp`
+- `message-os-cloud-admin-mcp`
+- `message-os-cloud-dashboard-builder`
+
+Current blocker / incomplete items:
+
+- The `tool-notes` Worker currently has no bindings attached.
+- Attempted to attach D1 binding `DB -> 9e296f79-b9a0-4598-a05b-37eafc12a924` using `mcp-prax.updateWorkerBindings`; Cloudflare returned: `Content-Type must be one of: multipart/form-data`.
+- Attempted raw Cloudflare settings PATCH through `mcp-prax.cfApiRequest`; same multipart limitation.
+- Attempted direct D1 schema initialization through raw `cfApiRequest`; SQL payload was blocked by tool safety before reaching Cloudflare.
+
+Current real Cloudflare state:
+- Worker `tool-notes`: deployed.
+- D1 `tool-notes-db`: created.
+- D1 binding `DB`: not attached.
+- Schema migration: not applied.
+- `/seed/social-builder`: not run.
+
+Recommended next step when a capable tool is available:
+1. Attach Worker D1 binding:
+   - Worker: `tool-notes`
+   - binding name: `DB`
+   - D1 uuid: `9e296f79-b9a0-4598-a05b-37eafc12a924`
+2. Apply schema migration for `tools` and `notes`.
+3. POST `/seed/social-builder`.
+4. Smoke test:
+   - GET `/health`
+   - GET `/manifest`
+   - GET `/belts`
+   - GET `/tools`
+
+ChatGPT also prepared a local starter patch earlier for repository alignment, but direct GitHub repo push was not available in this session.
+
