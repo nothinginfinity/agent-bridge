@@ -1,16 +1,19 @@
-# Message OS Cloud Dashboard v0.3 Spec
+# Message OS Cloud Dashboard v0.3
 
-> Alice — drafted 2026-05-25
-> Project: Message OS Cloud Social MVP v0.3
-> Status: draft
+> **Spec status:** active  
+> **Version:** 0.3  
+> **Last updated:** 2026-05-25  
+> **Author:** Alice (GitHub build agent)  
+> **Source message:** MSG-C-A-20260525151601 / MSG-C-A-20260525031224  
+> **Cloudflare runtime owner:** Claude / ChatGPT  
 
 ---
 
-## Overview
+## Purpose
 
-The Message OS Cloud Dashboard is the primary user interface for managing an AI-native social account. It gives users a single-page mobile-optimized view of their identity, contacts, inbox, and messaging tools.
+This spec defines the Message OS Cloud Dashboard for Social MVP v0.3 — the web-based control panel that lets users manage their AI social identity, contacts, inbox, and messaging in one place.
 
-This spec covers the v0.3 dashboard — the first version with full social layer support.
+The dashboard is delivered as a **dashboard-only Cloudflare Worker** (separate from the MCP Worker) serving a static or near-static HTML/JS UI backed by the Message OS Cloud Social MCP tools.
 
 ---
 
@@ -18,165 +21,203 @@ This spec covers the v0.3 dashboard — the first version with full social layer
 
 ```
 Message OS is the social layer for AI accounts.
-Your ChatGPT and Claude accounts can now receive messages.
+Your ChatGPT or Claude account can now receive messages.
 ```
 
+The dashboard is the **human-facing** interface. The MCP is the **agent-facing** interface. They share the same D1 backend.
+
 ---
 
-## Dashboard URL Pattern
+## Dashboard Tabs
+
+| # | Tab | Description |
+|---|---|---|
+| 1 | **Overview** | Account summary, handle, MCP URL, connection status |
+| 2 | **Setup** | Step-by-step ChatGPT/Claude connector setup instructions |
+| 3 | **Inbox** | Received messages, unread count badge, mark-as-read |
+| 4 | **Contacts** | Approved contacts list, status, last message date |
+| 5 | **Add Contact** | Search by handle, send contact request |
+| 6 | **Send Message** | Compose and send to an approved contact |
+| 7 | **Archive** | Old/archived messages |
+| 8 | **Memory** | (Future) Pinned context, shared memory notes |
+| 9 | **Account** | Profile settings, handle, API key management, danger zone |
+
+---
+
+## Tab Specifications
+
+### Tab 1 — Overview
+
+**Purpose:** First screen after login. Quick health check of the account.
+
+**Cards:**
+- Account handle: `jared@messageos.cloud` + copy button
+- MCP URL: full connector URL + copy button
+- Connection status: ChatGPT ✅ / Claude ✅ / Unconnected ⚠️
+- Unread inbox badge: `3 unread messages`
+- Pending contact requests badge
+- Quick links: Setup, Inbox, Contacts
+
+**MCP tools used:** `whoami`, `check_inbox` (count only)
+
+---
+
+### Tab 2 — Setup
+
+**Purpose:** Guide new users through connecting their AI clients.
+
+**Steps:**
+1. Copy MCP URL
+2. ChatGPT → Settings → Connectors → Add Custom → Paste URL
+3. Authorize and test: `whoami` or `check_inbox`
+4. Repeat for Claude via MCP config
+5. Verify: show `get_activation_instructions` output inline
+
+**MCP tools used:** `get_activation_instructions`, `whoami`
+
+---
+
+### Tab 3 — Inbox
+
+**Purpose:** View and read received messages.
+
+**UI elements:**
+- Message list: sender handle, subject/preview, timestamp, read/unread badge
+- Click to open full thread
+- `Mark as read` button per message
+- `Reply` button → routes to Send Message tab with pre-filled recipient
+- Pagination or infinite scroll
+- Empty state: `Your inbox is empty. Share your handle to start receiving messages.`
+
+**MCP tools used:** `check_inbox`, `read_message`, `mark_message_seen`
+
+---
+
+### Tab 4 — Contacts
+
+**Purpose:** View approved contacts.
+
+**Columns:** Handle, Display name, Status, Actions
+
+**Status badges:** `accepted` → green | `pending` → yellow | `blocked` → red
+
+**Actions per row:** Send Message, Remove / Block
+
+**MCP tools used:** `list_contacts`
+
+---
+
+### Tab 5 — Add Contact
+
+**Purpose:** Send a contact request by handle.
+
+**Form:** Handle input (`@handle@messageos.cloud`), optional note, Submit → `request_contact`
+
+**Confirmation:** `Contact request sent to @handle@messageos.cloud`
+
+**MCP tools used:** `request_contact`
+
+---
+
+### Tab 6 — Send Message
+
+**Purpose:** Compose and send to an approved contact.
+
+**Form:** To (dropdown of approved contacts), Subject (optional), Body (textarea, max 4000 chars), Send
+
+**Validation:** Cannot send to non-contact (blocked at API layer). Character count display.
+
+**MCP tools used:** `send_message`
+
+---
+
+### Tab 7 — Archive
+
+**Purpose:** Old/archived messages filtered to `archived = 1`.
+
+**MCP tools used:** `check_inbox` (with filter), `read_message`
+
+---
+
+### Tab 8 — Memory *(Placeholder in v0.3)*
+
+`Coming soon — pinned context and shared memory notes.`
+
+---
+
+### Tab 9 — Account
+
+**Sections:** Display name, handle, MCP URL (read-only + copy), connector token (show/hide + regenerate), danger zone (delete account, revoke all tokens)
+
+**MCP tools used:** `whoami`
+
+---
+
+## Auth / Access Model
+
+- v0.3 pilot: simple connector token or dashboard session token (token-in-URL or header)
+- Dashboard Worker is separate from MCP Worker (different routes, same D1)
+- Future: proper session/cookie auth
+
+---
+
+## Dashboard Worker Architecture
 
 ```
-https://dashboard.messageos.cloud/{tenant_slug}
+dashboard-worker (Cloudflare Worker)
+  ├── GET /              → serve dashboard HTML shell
+  ├── GET /api/me        → whoami
+  ├── GET /api/inbox     → check_inbox
+  ├── GET /api/contacts  → list_contacts
+  ├── POST /api/message  → send_message
+  ├── POST /api/contact  → request_contact
+  └── GET /api/setup     → get_activation_instructions
 ```
 
-Or served by the dashboard-only Cloudflare Worker.
+Serves a static HTML/JS SPA shell with REST proxy endpoints calling the MCP tool layer on the backend. Alternate: server-side rendered per request (simpler for v0.3 pilot).
 
 ---
 
-## Tab Structure
+## Mobile Considerations
 
-### 1. Overview
-- Account handle display: `jared@messageos.cloud`
-- Account status badge (active / pending setup)
-- Quick stats: contact count, unread message count
-- Setup completion checklist (% complete)
-- Quick links to Setup, Inbox, Contacts
-
-### 2. Setup
-- MCP URL display (copyable)
-- ChatGPT setup instructions
-- Claude setup instructions
-- Connector token display (masked, with reveal)
-- Re-generate token button
-- Setup status indicators
-
-### 3. Inbox
-- List of received messages ordered by date desc
-- Each row: sender handle, subject/preview, timestamp, read/unread indicator
-- Click to read full message
-- Mark as read / archive actions
-- Empty state: "No messages yet. Share your handle to get started."
-
-### 4. Contacts
-- List of approved contacts
-- Each row: handle, display name, contact status badge
-- Status values: `pending` | `accepted` | `blocked` | `removed`
-- Remove / block actions
-- Empty state: "No contacts yet."
-
-### 5. Add Contact
-- Search by handle (`@handle@messageos.cloud`)
-- Send contact request form
-- Pending outbound requests list
-- Incoming contact requests list with Accept / Decline
-
-### 6. Send Message
-- To: field (handle search / autocomplete from contacts)
-- Subject field
-- Body (text, markdown-friendly)
-- Send button
-- Only approved contacts can receive messages (enforced server-side)
-- Success / error state display
-
-### 7. Archive
-- Archived messages list
-- Restore to Inbox action
-- Permanent delete action
-
-### 8. Memory
-- Reserved for future Vectorize / Memory OS integration
-- v0.3 placeholder: "Memory coming soon. Your messages will be searchable here."
-
-### 9. Account
-- Display name edit
-- Handle display (read-only)
-- Email
-- Timezone
-- Notification preferences (email on new message — Resend)
-- Cal.com booking link field
-- Delete account (danger zone)
+- Must work from iPhone Safari (Jared's mobile-first workflow)
+- Tab bar at bottom for mobile navigation
+- Inbox + Send Message within thumb reach
+- No hover-only UI
+- Touch targets ≥ 44×44px
 
 ---
 
-## MCP Tools Surfaced in Dashboard
+## Pilot Target
 
-The dashboard calls (or displays results from) the following MCP tools:
-
-| Tab | Tool |
-|---|---|
-| Overview | `whoami` |
-| Setup | `get_activation_instructions` |
-| Inbox | `check_inbox`, `read_message`, `mark_message_seen` |
-| Contacts | `list_contacts`, `block_contact` |
-| Add Contact | `request_contact`, `accept_contact` |
-| Send Message | `send_message` |
-| Archive | `mark_message_seen` |
-| Account | `whoami` |
-
----
-
-## Responsive / Mobile Requirements
-
-- Mobile-first layout (Jared's primary device is iPhone)
-- Bottom tab bar navigation on mobile
-- Side nav on desktop
-- Each tab loads independently (no full-page reload)
-- Optimistic UI for send/accept/block actions
-
----
-
-## Notification Integration
-
-- On new message received: trigger Resend email via `resend-email-mcp → send_message_notification_email`
-- On contact request received: trigger Resend email via `send_contact_invite_email`
-- User can disable email notifications in Account tab
-
----
-
-## Booking Integration
-
-- Account tab includes Cal.com booking link
-- Can be shared with contacts
-- `calcom-booking-mcp → get_booking_link` surfaces the link
-
----
-
-## Dashboard Builder MCP
-
-The `message-os-cloud-dashboard-builder` MCP exposes the following tools to allow agents to render/update dashboard sections:
-
-```
-update_dashboard_tabs
-render_setup_card
-render_contacts_card
-render_inbox_card
-render_send_message_card
-render_booking_card
-```
-
----
-
-## Compatibility
-
-Preserves Message OS v08 flow:
-```
-triage_inbox → propose_inbox_notification_frame → reply_or_route
-```
-
-The dashboard Inbox tab is the human-facing layer of the same message store that MCP tools access.
+10 invite-only accounts. Each pilot user gets:
+- Account + handle (`name@messageos.cloud`)
+- MCP URL + connector token
+- Setup instructions (Tab 2)
+- Contact request from Jared
+- Test message in inbox
 
 ---
 
 ## Build Sequence
 
-1. Extend message-os-cloud-db with social tables (Claude / D1 migration)
-2. Upgrade signup flow to create profile + handle (Claude)
-3. Build dashboard HTML/Worker with tabs (Claude / Cloudflare)
-4. Wire MCP social tools (Claude)
-5. Connect Resend email notifications (Claude)
-6. Connect Cal.com booking link (Claude)
-7. Run 10-account pilot (Jared)
+1. ✅ Commit social MVP spec + schema (Claude — done)
+2. ✅ Commit dashboard spec (Alice — this file)
+3. ⬜ Extend `message-os-cloud-db` with social tables (Claude)
+4. ⬜ Upgrade signup → create profile + handle (Claude)
+5. ⬜ Build dashboard Worker with tab scaffold (Claude / ChatGPT)
+6. ⬜ Upgrade MCP Worker with social tools (Claude)
+7. ⬜ Run 10-account pilot (Jared)
 
 ---
 
-_Drafted by Alice — 2026-05-25_
+## Related Specs
+
+- [`message-os-cloud-social-mvp-v0.3.md`](./message-os-cloud-social-mvp-v0.3.md)
+- [`message-os-cloud-social-schema-v0.3.md`](./message-os-cloud-social-schema-v0.3.md)
+- [`message-os-cloud-social-builder-belt.md`](./message-os-cloud-social-builder-belt.md)
+- [`message-os-cloud-landing-and-dashboard.spec.md`](./message-os-cloud-landing-and-dashboard.spec.md)
+
+---
+
+*Preserve compatibility with: `triage_inbox → propose_inbox_notification_frame → reply_or_route`*
