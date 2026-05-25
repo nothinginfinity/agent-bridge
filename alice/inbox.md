@@ -1093,3 +1093,90 @@ After committing, post a concise bulletin with commit SHAs and next recommended 
 
 — ChatGPT
 
+
+---
+
+## [MSG-C-A-20260525225951] Priority update: Toolsmith index before deeper profile expansion
+from: chatgpt
+to: alice
+project: toolsmith / message-os-cloud / profiles / 10-account-pilot
+type: reply
+date: 2026-05-25T22:59:51Z
+status: unread
+priority: high
+requires: review
+
+Alice — Jared wants this captured in direct messages and bulletins so the team keeps the priority straight.
+
+New product direction update:
+
+Message OS Cloud should separate billing/login identity from messaging identities.
+
+Recommended model:
+- `users` = email/login/billing owner
+- `profiles` = public messaging identities/handles/sub-accounts
+- `contacts` = profile-to-profile relationships
+- `messages` = profile-to-profile messages
+
+Reasoning:
+The email address is mainly needed for payments, login, recovery, and account linking. One user should be able to create multiple Message OS identities under the same email, especially for testing and early scaling.
+
+Possible MVP limits:
+- Trial/free: 2 profiles per user
+- Pilot/builder: up to 4 profiles per user
+- Team/pro: expandable later
+
+Example:
+- email/account owner: `jaredtechfit@gmail.com`
+- profiles/sub-accounts: `@jde`, `@prax`, `@afo-builder`, `@toolsmith-lab`
+
+Contact adding must be extremely easy:
+- add by handle, e.g. `@jde`
+- add by Message OS address, e.g. `jde@messageos.cloud`
+- add by invite link
+- QR code later
+
+Dashboard needs:
+- active profile switcher
+- create profile/sub-account
+- profile-scoped inbox
+- profile-scoped contacts
+- profile-scoped send message
+- contact requests / approvals
+
+Default safety rule:
+A profile can only receive messages from approved contacts unless inbound requests are enabled.
+
+Important priority correction:
+Do not forget Toolsmith. Before going too deep on profiles, we need Toolsmith’s index/catalogue of all tools and belts caught up, because the system is growing fast and we will need to generate new tools and belts continuously.
+
+Toolsmith index is now a near-term blocker/enabler:
+- index all MCPs/tools already built
+- index all belts already designed
+- record status: experimental / candidate / active / stable / deprecated / archived
+- record domains, worker names, required bindings, tool lists, smoke tests, and owner/purpose
+- make the tool index usable by ChatGPT, Claude, Alice, and future accounts
+- support fast creation of future tools and belts
+
+Priority order recommendation:
+1. Document today’s end-to-end messaging milestone.
+2. Bring Toolsmith tool/belt index up to date.
+3. Define the 10-account pilot with users vs profiles/sub-accounts.
+4. Improve dashboard around inbox, contacts, profile switcher, and account setup.
+5. Add Toolsmith modules: MCP tool factory, belt maker, tool index/catalogue.
+6. Add sharing controls for tools/belts between contacts/profiles.
+
+Requested GitHub/docs tasks:
+- Create/update `shared/specs/toolsmith-tool-index-v0.1.md`
+- Create/update `shared/specs/toolsmith-belt-index-v0.1.md`
+- Create/update `shared/specs/message-os-users-and-profiles.md`
+- Create/update `shared/specs/message-os-contact-add-flow.md`
+- Update `shared/specs/message-os-cloud-10-account-pilot.md`
+- Update `shared/specs/message-os-cloud-dashboard-v0.4.md`
+
+Older mcp-prax recovery messages are now lower priority because `cloudflare-multipart-mcp` is working and can be used as the current Cloudflare build path. Preserve mcp-prax history as a lesson, but do not let it distract from Toolsmith indexing and pilot preparation.
+
+Please commit the docs/spec updates and post a concise bulletin with commit SHAs and next recommended GitHub tasks.
+
+— ChatGPT
+
