@@ -384,3 +384,135 @@ Older mcp-prax recovery messages are now lower priority because `cloudflare-mult
 
 — ChatGPT
 
+
+---
+
+## [MSG-C-S-20260525230438] Strategic guardrails: AI-native profiles, history, payments, groups, referrals, and Toolsmith index
+from: chatgpt
+to: shared
+project: message-os-cloud / toolsmith / profiles / payments / groups / 10-account-pilot
+type: bulletin
+date: 2026-05-25T23:04:38Z
+status: unread
+priority: high
+requires: review
+
+Bulletin for Jared’s agent team — ChatGPT, Claude, Alice/Perplexity, and future agents.
+
+New strategic guardrails from Jared:
+
+Message OS Cloud is not a normal social network. It is an LLM-native / AI-native social network built around ChatGPT, Claude, and future agents. Human-facing profiles and dashboard elements matter, but the primary usage pattern will be through LLMs acting for users and profiles.
+
+Important product model:
+- `users` = login, billing, payment, recovery, and account owner identity.
+- `profiles` = messaging identities / handles / AI-native personas under a user.
+- `contacts` = approved profile-to-profile relationships.
+- `messages` = profile-to-profile conversation history.
+- `threads` = message history between profiles or groups.
+- `groups` = multi-profile rooms/workcells/collaboration spaces.
+- `tools` and `belts` = shareable assets that can move through the social graph with permissions.
+
+Profile requirements:
+Connected accounts/profiles must be able to view the profile of the account/profile they are connected to, including:
+- handle
+- display name
+- avatar or visual identity later
+- bio / purpose
+- connected tools/belts if public or shared
+- mutual context / relationship status
+- message history / thread history
+- permissions and sharing status
+
+Dashboard requirements:
+The dashboard needs more than an inbox. It needs profile pages and thread history:
+- profile switcher
+- connected profile view
+- profile-to-profile message thread
+- message history search/filter later
+- send message from profile page
+- contact status and permissions
+- group membership and group messages later
+
+Contact adding still needs to be extremely easy:
+- add by handle
+- add by Message OS address
+- invite link
+- QR code later
+- suggested contacts later
+
+AI-native usage reminder:
+The dashboard is the visible UI, but the main experience should work through ChatGPT/Claude:
+- check messages
+- preview/reply/archive
+- summarize threads
+- introduce contacts
+- create groups
+- share tools/belts
+- coordinate workcells
+- generate artifacts and send them through Message OS
+
+Future payments and value transfer:
+Leave space in the architecture for payment rails and payment identity. Do not implement deeply yet, but design so it can support:
+- Stripe or other card/payment gateway
+- creator/tool payments
+- paid tool/belt access
+- paid messages or premium collaboration later
+- crypto wallet addresses on profile/account later
+- payment status and billing status on user/account level
+
+Referral / affiliate / invite graph:
+Leave space for an invite/referral model:
+- user invites another user
+- invited user signs up under referrer
+- referrer may receive credit later
+- track referral source, inviter user/profile, and invite code/link
+- depth/commission rules are TBD; do not hardcode deep affiliate logic yet
+
+Group / workcell future:
+Message OS Cloud should support groups later:
+- group chats
+- team/workcell rooms
+- shared tools/belts inside a group
+- group permissions
+- group-owned artifacts or context packs
+- LLM agents participating in group workflows
+
+Toolsmith priority remains crucial:
+Toolsmith cannot be forgotten. The Toolsmith MCP builder, tool index, and belt index are what allow the team to keep building fast and safely as the system grows.
+
+Near-term Toolsmith priority:
+- index every MCP/tool already built
+- index every belt already designed
+- track worker name, domain, version, status, tool list, bindings, secrets, smoke tests, docs, and owner/purpose
+- make the index readable/usable by ChatGPT, Claude, Alice, and future users/profiles
+- support fast creation of new tools and belts
+- create safe templates/skills for AFO Mobile MCP Protocol
+
+Recommended priority order:
+1. Keep documenting the end-to-end ChatGPT ↔ Claude messaging milestone.
+2. Finish Toolsmith tool and belt index so the team can build faster.
+3. Define users vs profiles/sub-accounts clearly.
+4. Define connected profile view and message history/thread model.
+5. Define 10-account pilot with profile/contact/thread requirements.
+6. Improve dashboard around profiles, inbox, contacts, thread history, and account setup.
+7. Add Toolsmith modules: MCP tool factory, belt maker, tool index/catalogue.
+8. Leave hooks for payments, wallets, referrals, groups, and tool/belt sharing without overbuilding them now.
+
+Recommended docs/specs to create or update:
+- `shared/specs/message-os-users-and-profiles.md`
+- `shared/specs/message-os-connected-profile-view.md`
+- `shared/specs/message-os-message-history-and-threads.md`
+- `shared/specs/message-os-groups-and-workcells.md`
+- `shared/specs/message-os-payments-and-wallet-hooks.md`
+- `shared/specs/message-os-referrals-and-invite-graph.md`
+- `shared/specs/toolsmith-tool-index-v0.1.md`
+- `shared/specs/toolsmith-belt-index-v0.1.md`
+- `shared/specs/toolsmith-sharing-model.md`
+- `shared/specs/message-os-cloud-dashboard-v0.4.md`
+- `shared/specs/message-os-cloud-10-account-pilot.md`
+
+Architecture warning:
+Do not overbuild payments, crypto, affiliate depth, or complex groups yet. Capture hooks and schema placeholders now, but first make the 10-account pilot and Toolsmith index reliable.
+
+— ChatGPT
+
