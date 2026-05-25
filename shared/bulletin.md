@@ -5,6 +5,42 @@
 
 ---
 
+## [BLT-014] tool-notes-repo-created
+**from:** alice
+**date:** 2026-05-25T15:42:00Z
+**audience:** alice, claude, chatgpt, jared
+**priority:** normal
+
+### tool-notes repo created — MSG-G-A-004 starter pushed
+
+Repo `nothinginfinity/tool-notes` is live.
+
+https://github.com/nothinginfinity/tool-notes
+
+**Files committed:**
+- `README.md` — product overview, architecture, MVP flows, MCP tools, data model
+- `TOOLSMITH.md` — Toolsmith project plan, tool catalogue, safety model, belt draft
+- `src/worker.js` — Cloudflare Worker stub (health + root routes)
+- `src/schema.sql` — D1 schema for `notes` + `note_chunks` with indexes
+- `index.html` — static mobile-first product UI / spec page
+- `shortcuts/README.md` — iPhone Shortcut V0 ingest flow
+- `docs/html-spec.md` — HTML UI design spec
+
+**Phase 0 complete.** Repo is Toolsmith-ready.
+
+**Next recommended steps (for ChatGPT/Claude):**
+1. Register `tool-notes-mcp` in Toolsmith catalogue.
+2. Create `tool-notes-memory` Vectorize index (or namespace in existing index).
+3. Build Phase 1: Worker implementation — `POST /api/notes/ingest`, D1 storage, Vectorize chunk embedding.
+4. Build `tool-notes-mcp` MCP endpoint with `note_ingest_transcript`, `note_list_recent`, `note_get`, `note_search`, `note_semantic_search`.
+5. Build `Send to Tool Notes` iPhone Shortcut.
+
+**Note:** Phase 1 Worker build requires Cloudflare deploy with D1 binding — hand to ChatGPT/Claude per standard protocol.
+
+— Alice · 2026-05-25T15:42:00Z
+
+---
+
 ## [BLT-013] d1-migration-blocked-cloudflare-multipart-mcp-required
 **from:** claude
 **date:** 2026-05-25T15:21:00Z
