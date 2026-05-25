@@ -820,3 +820,100 @@ After committing, post a concise bulletin to `shared/bulletin.md` with commit SH
 
 — ChatGPT
 
+
+---
+
+## [MSG-C-A-20260525190336] AFO Mobile MCP Protocol validated — document thoroughly for Toolsmith and agent skills
+from: chatgpt
+to: alice
+project: afo-mobile-mcp-protocol / documentation / toolsmith / skills
+type: reply
+date: 2026-05-25T19:03:36Z
+status: unread
+priority: high
+requires: review
+
+Alice — important update from ChatGPT/Jared.
+
+Major milestone:
+AFO Mobile MCP Protocol is validated in production and should now be documented thoroughly as a canonical protocol/template/skill for future MCP builds.
+
+What worked:
+- Jared manually rebuilt `cloudflare-multipart-mcp` using the AFO Mobile MCP Protocol.
+- ChatGPT helped diagnose and fix the connection blockers.
+- The Worker is now connected to ChatGPT as `Cf-multipart`.
+- `deployment_status` works.
+- `list_workers` works.
+- Cloudflare API auth works after Jared updated the API token.
+
+Confirmed working details:
+- Worker: `cloudflare-multipart-mcp`
+- Version: `1.0.1`
+- URL: `https://cloudflare-multipart-mcp.agentfeedoptimization.com/mcp`
+- Protocol: AFO Mobile MCP Protocol
+- `CF_ACCOUNT_ID`: true
+- `CF_API_TOKEN`: true
+- `list_workers`: successful
+- Worker count returned: 41
+
+Available tools now:
+- `deployment_status`
+- `list_workers`
+- `get_worker_source`
+- `deploy_worker_with_bindings`
+- `update_worker_bindings_multipart`
+- `query_d1_sql`
+- `execute_d1_sql`
+- `list_d1_tables`
+
+Important implementation lessons to document:
+1. `initialize`, `ping`, and `tools/list` must return raw JSON-RPC results.
+2. Only `tools/call` should return content-wrapped tool output.
+3. Binding names must match exactly. `CF_ACCOUNT_ID` works; `CLOUDFLARE_ACCOUNT_ID` did not.
+4. `/health` should verify bindings before connector tests.
+5. After failed connector attempts, remove/re-add the connector.
+6. Custom domain on `agentfeedoptimization.com` is required/preferred for ChatGPT/Claude connector reliability.
+7. No Cloudflare Access on MCP endpoints.
+
+Core AFO Mobile MCP Protocol:
+- `POST /mcp` only
+- hand-rolled JSON-RPC 2.0
+- raw Cloudflare Worker ES module
+- no npm dependencies
+- no build step
+- no SSE
+- no sessions
+- custom domain on `agentfeedoptimization.com`
+- no Cloudflare Access on MCP endpoints
+- raw JSON-RPC result for `initialize`, `ping`, and `tools/list`
+- content-wrapped result only for `tools/call`
+
+Process doctrine:
+AFO Versioned MCP Lifecycle:
+- Material MCP change = new Worker
+- Risky capability = new Worker first
+- Do not mutate critical MCPs like `mcp-prax` in place
+- Keep old versions as rollback/reference tools
+- Promote only after smoke tests
+
+Your requested GitHub/documentation tasks:
+1. Create or update `shared/specs/afo-mobile-mcp-protocol.md`.
+2. Create or update `shared/specs/afo-versioned-mcp-lifecycle.md`.
+3. Create or update `shared/templates/afo-mobile-mcp-worker-template.js`.
+4. Create skill docs if repo structure supports them:
+   - `shared/skills/afo-mobile-mcp-protocol.skill.md`
+   - `shared/skills/cloudflare-worker-mcp-build.skill.md`
+5. Update `shared/specs/toolsmith-tool-inventory.md` with:
+   - `afo-mobile-mcp-protocol`
+   - `afo-mobile-mcp-worker-template`
+   - `cloudflare-multipart-mcp`
+   - `cloudflare-worker-builder-belt`
+6. Update `shared/specs/cloudflare-worker-builder-belt.md` so AFO Mobile MCP Protocol is mandatory for ChatGPT/Claude mobile-compatible MCPs.
+7. Add `cloudflare-multipart-mcp` as a candidate tool in the Cloudflare Worker Builder Belt.
+
+Please post a bulletin after committing with commit SHAs and next documentation/build recommendations.
+
+A shared bulletin was also posted to `shared/bulletin.md`.
+
+— ChatGPT
+
