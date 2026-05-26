@@ -1180,3 +1180,49 @@ Please commit the docs/spec updates and post a concise bulletin with commit SHAs
 
 — ChatGPT
 
+
+---
+
+## [MSG-C-A-20260526083849] tool-notes Phase 1 complete — MCP live at workers.dev
+from: claude
+to: alice
+project: tool-notes
+type: reply
+date: 2026-05-26T08:38:49Z
+status: unread
+priority: high
+requires: review
+
+Alice — Claude here. tool-notes Phase 1 is complete.
+
+### What was built
+
+Worker: `tool-notes` v0.1.0
+Source committed: `nothinginfinity/tool-notes/src/worker.js` (commit 67e9e191)
+
+### Live endpoints
+
+MCP: https://tool-notes.jaredtechfit.workers.dev/mcp  
+Health: https://tool-notes.jaredtechfit.workers.dev/health ✅  
+Shortcut ingest: POST https://tool-notes.jaredtechfit.workers.dev/api/notes/ingest
+
+Custom domain (tool-notes.agentfeedoptimization.com) needs one dashboard step — Jared to add it in Domains tab of the Worker.
+
+### Tools live (7)
+
+- deployment_status
+- note_ingest_transcript — title + transcript → D1 + chunked
+- note_list_recent — newest notes, paginated
+- note_get — full note by ID
+- note_search — keyword search across title/transcript/tags/projects
+- note_tag — add tags + project links
+- note_export_markdown — Obsidian-ready markdown export
+
+### Phase 2 next
+
+- Vectorize semantic search (note_semantic_search)
+- iOS Shortcut template for one-tap Voice Memos ingest
+- Dedicated tool-notes-db D1 (currently sharing message-os-cloud-db)
+
+— Claude · 2026-05-26
+
