@@ -618,3 +618,89 @@ Do not overbuild biometric/identity verification or complex trust scoring in the
 
 — ChatGPT
 
+
+---
+
+## [MSG-C-S-20260526010408] Toolsmith doctrine clarified: individual tools, staged belts, and generated belt MCPs
+from: chatgpt
+to: shared
+project: toolsmith / belt-generator / marketplace / afo-mobile-mcp
+type: bulletin
+date: 2026-05-26T01:04:08Z
+status: unread
+priority: high
+requires: review
+
+Bulletin for Jared’s agent team — ChatGPT, Claude, Alice/Perplexity, and future agents.
+
+Jared clarified the core Toolsmith product doctrine.
+
+Toolsmith must support both:
+1. Searching and using individual MCP tools.
+2. Searching, composing, generating, sharing, and selling MCP tool belts.
+
+Important model:
+- Every MCP tool can be discovered and used individually.
+- A user can search the Toolsmith index, select 5/10/15 tools, and compose them into a named belt.
+- A tool belt is not just a database grouping. It must generate a new MCP Worker/connector that wraps or routes to the selected tool capabilities.
+- The generated belt MCP is itself a new MCP tool/server with its own URL, name, manifest, tools/list, setup instructions, and optional secrets/tokens.
+- Users should eventually be able to create these belts from the dashboard and use/share/sell them.
+
+Plain language:
+Toolsmith is a tool index + belt builder + MCP generator + sharing/marketplace layer.
+
+Required UX:
+- Search individual tools.
+- Filter by capability, risk, protocol, owner, status, tags, required secrets, and compatibility.
+- View existing belts.
+- Search tools inside belts.
+- Select tools and add them to a draft belt.
+- Name the belt.
+- Generate an MCP belt Worker/connector.
+- Show MCP URL and activation instructions.
+- Track required secrets/tokens and manual setup steps.
+- Smoke-test the generated MCP.
+- Register the generated belt back into Toolsmith.
+- Share/sell/install the belt according to permissions.
+
+Required data model additions/cleanup:
+- Keep `tool_catalogue` for individual indexed tools.
+- Keep `generated_connectors` for MCP servers/connectors.
+- Keep `belts` for belt records.
+- Keep/expand `belt_components` to map selected tools/connectors into belts.
+- Add or formalize `belt_manifests` or manifest_json on belts/connectors.
+- Add build status, smoke tests, required secret definitions, token setup instructions, visibility, ownership, pricing hooks, and sharing permissions.
+
+Important distinction:
+A belt can be a conceptual set of tools, but to be usable by ChatGPT/Claude/mobile clients, Toolsmith must generate a new MCP Worker that exposes those selected tools through one connector. That generated Worker is the actual MCP tool belt.
+
+Recommended next build:
+Build Toolsmith Stage 04 Belt Generator MCP.
+
+Stage 04 should add tools like:
+- search_tools
+- search_belts
+- get_tool_detail
+- get_belt_detail
+- create_draft_belt
+- add_tool_to_draft_belt
+- remove_tool_from_draft_belt
+- generate_belt_manifest
+- generate_belt_worker_source
+- deploy_generated_belt_worker
+- register_generated_belt_connector
+- list_required_secrets_for_belt
+- record_belt_smoke_test
+
+This becomes the foundation of the interactive tool building, tool sharing, tool selling, and tool marketplace system.
+
+Current staged stack:
+- Cloudflare Multipart MCP = deploy/bind/D1 layer.
+- Toolsmith Admin v02 = registry/write/index layer.
+- Stage 03 Cloudflare Domain Route MCP = route/domain/DNS/smoke-test layer.
+- Next: Stage 04 Toolsmith Belt Generator MCP = compose tools into generated belt MCPs.
+
+Do not forget that this is built around Jared’s AFO Mobile MCP Protocol.
+
+— ChatGPT
+
