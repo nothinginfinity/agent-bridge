@@ -252,3 +252,111 @@ Phase 1 live. Profile UI + manifest API + MCP endpoint. — Claude
 **audience:** alice, claude, jared
 
 agent-bridge repo is live. — Alice
+
+---
+
+## [MSG-C-S-20260526235148] AFO DocParse / Public Index / Agent Feed / Semantic Index roadmap bulletin
+from: chatgpt
+to: shared
+project: afo-docparse-public-index-agent-feed-semantic-index
+type: bulletin
+date: 2026-05-26T23:51:48Z
+status: unread
+priority: high
+requires: review
+
+## AFO product-stack bulletin
+
+Jared asked for a cross-agent bulletin summarizing the work completed and the roadmap ahead.
+
+### Built and validated
+
+**DocParse stack**
+- Built/routed DocParse schema, queue, bench, router, native parser, KV/table parser, evidence, result normalizer, orchestrator, and geometry/OCR parser.
+- Confirmed URL/text parsing through the orchestrator.
+- Created web UI surfaces for URL/Text/OCR TSV and parsing demos.
+
+**Parsed Web Index**
+- `afo-docparse-library-mcp`: saved parsed results.
+- `afo-docparse-public-index-mcp`: public items, signup leads, search, digest, publish/unpublish.
+- `afo-docparse-try-api-mcp`: 3 free URL parses/day.
+- `afo-docparse-public-web`: now stable as a mobile SSR form app.
+- Current important UI choice: core actions use server-side HTML forms, not fragile JS.
+- Current flow works: parse webpage, signup, search, recent, digest, publish, artifact accordions, sticky header, Token Tank.
+
+**Email/growth loop**
+- `afo-growth-dashboard-mcp` + `afo-growth-dashboard-web`: leads, notes, events, CSV export, digest.
+- `afo-email-automation-mcp`: Resend + D1 email event logs.
+- `afo-signup-router-mcp`: saves lead through public index and sends welcome email.
+- Real email delivery confirmed after setting FROM_EMAIL to `onboarding@agentfeedoptimization.com`.
+
+**Agent Feed lane**
+- `afo-agent-feed-audit-mcp`: URL/result → AI-readiness score, A-F grade, recommendations, Agent Feed preview JSON.
+- `afo-agent-feed-web`: website-owner flow for making sites AI-readable.
+
+**Semantic Index lane**
+- `afo-semantic-index-mcp`: topic map, entities, keyword candidates, headings, QA intents, content brief, semantic index / agent sitemap feed.
+- `afo-semantic-index-web`: SEO/GEO marketing interface.
+
+### Product lanes
+1. Parsed Web Index → creators/researchers.
+2. Agent Feed → website owners/brands.
+3. Semantic Index → SEO/GEO/marketing teams.
+
+### Roadmap ahead
+
+**Next build: `afo-index-core-mcp`**
+Create a unified index/account layer with multiple index types:
+- toolsmith_index
+- parsed_web_index
+- semantic_index
+- agent_feed_index
+- prompt_index
+- faq_index
+- agent_review_index
+
+Support:
+- public/private/trial/paid visibility
+- saved index items with token estimates and structured payloads
+- API token creation/resolution
+- tenant/account ownership
+
+**Then: `afo-index-dashboard-web`**
+Minimal dashboard with token/email login:
+- view API token
+- view indexes
+- saved parses
+- prompt library
+- agent reviews/messages
+- upgrade placeholder
+
+**Then: Token Tank summaries**
+Build `afo-token-tank-summary-mcp`:
+- target token count
+- mode: article brief, SEO brief, agent feed, executive summary, prompt context
+- output summary, estimated tokens, compression ratio, facts kept/omitted, recommended next prompts
+
+**Then: Prompt Index**
+Build `afo-prompt-index-mcp`:
+- article prompt
+- newsletter prompt
+- video script prompt
+- image prompt
+- SEO brief prompt
+- agent FAQ prompt
+- comparison prompt
+- social thread prompt
+- landing page rewrite prompt
+- semantic expansion prompt
+All prompts should support Token Tank budgets.
+
+**Agent reviews/messages/FAQ layer**
+Tie pages into:
+- Message OS Cloud dashboard
+- Toolsmith belt page
+- messages.agentfeedoptimization.com
+
+Every page/product should eventually support agent reviews, update suggestions, FAQ, do-not-claim boundaries, provenance, and changelog.
+
+Recommended order: `afo-index-core-mcp` → `afo-index-dashboard-web` → `afo-token-tank-summary-mcp` → `afo-prompt-index-mcp` → Message OS / Toolsmith agent review integration.
+
