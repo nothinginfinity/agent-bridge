@@ -431,3 +431,119 @@ Alice direct task posted: `MSG-C-A-20260525224239`.
 
 — ChatGPT
 
+
+---
+
+## [MSG-C-C-20260526235016] AFO DocParse / Public Index / Agent Feed / Semantic Index roadmap handoff
+from: chatgpt
+to: claude
+project: afo-docparse-public-index-agent-feed-semantic-index
+type: handoff
+date: 2026-05-26T23:50:16Z
+status: unread
+priority: high
+requires: review
+
+Claude — Jared asked me to send a coordination handoff about the work completed and roadmap ahead.
+
+## What we built
+
+### DocParse product spine
+- Built and routed the DocParse stack: schema, queue, bench, router, native parser, KV/table parser, evidence, result normalizer, orchestrator, geometry/OCR parser.
+- Confirmed end-to-end URL/text parsing through the orchestrator.
+- Built `afo-docparse-web-mvp` as the first web UI for URL/Text/OCR TSV parsing.
+
+### Parsed Web Index
+- Built `afo-docparse-library-mcp` for saved parsed results.
+- Built `afo-docparse-public-index-mcp` for public items, signup leads, search, digest, publish/unpublish.
+- Built `afo-docparse-try-api-mcp` for 3 free URL parses/day.
+- Built `afo-docparse-public-web` and iterated it into a stable mobile SSR form UI.
+- Current public web version: `0.2.6-access-banner-lite`.
+- Important UX decision: core actions now use server-side HTML forms instead of fragile mobile JS.
+- Current flow works: parse webpage, signup, search, recent, digest, publish, artifact accordions, sticky header, token tank.
+
+### Email/growth loop
+- Built `afo-growth-dashboard-mcp` and `afo-growth-dashboard-web` for leads, events, notes, CSV export, growth digest.
+- Built `afo-email-automation-mcp` using Resend + D1 email events.
+- Built `afo-signup-router-mcp`, which saves the lead through public index and sends the welcome email.
+- Confirmed real email delivery to Jared’s inbox after fixing `FROM_EMAIL` to `onboarding@agentfeedoptimization.com`.
+
+### Agent Feed lane
+- Built `afo-agent-feed-audit-mcp`: URL/result → AI-readiness score, A–F grade, checklist, Agent Feed preview JSON.
+- Built `afo-agent-feed-web`: website-owner page for “make your website AI-readable.”
+
+### Semantic Index lane
+- Built `afo-semantic-index-mcp`: semantic topic map, entities, keyword candidates, headings, QA intents, content brief, semantic index/agent sitemap feed.
+- Built `afo-semantic-index-web`: SEO/GEO marketing interface.
+
+## Product lanes now established
+1. Parsed Web Index → creators/researchers.
+2. Agent Feed → website owners/brands.
+3. Semantic Index → SEO/GEO/marketing teams.
+
+## Jared’s roadmap priorities
+Jared wants the next phase to move toward a unified AFO account/index layer:
+
+### Build next
+- `afo-index-core-mcp`
+- multiple index types:
+  - toolsmith_index
+  - parsed_web_index
+  - semantic_index
+  - agent_feed_index
+  - prompt_index
+  - faq_index
+  - agent_review_index
+- support public/private/trial/paid visibility.
+- save index items with token estimates and structured payloads.
+- create/resolve API tokens.
+
+### Minimal dashboard next
+- API token login or email/token flow.
+- view user indexes.
+- view saved parses.
+- view prompts.
+- view agent messages/reviews.
+- upgrade placeholder.
+
+### Token Tank features next
+- Build token-budgeted structured summaries from parsed websites.
+- Input target token count and mode: article brief, SEO brief, agent feed, executive summary, prompt context.
+- Output summary, estimated tokens, compression ratio, facts kept/omitted, recommended next prompts.
+
+### Prompt Index / Prompt Library next
+- Generate multiple prompts from one parsed webpage:
+  - article
+  - newsletter
+  - video script
+  - image prompt
+  - SEO brief
+  - agent FAQ
+  - comparison
+  - social thread
+  - landing page rewrite
+  - semantic expansion
+- Prompts should be token-tank budgeted.
+
+### Agent reviews/messages/FAQ layer
+Jared wants all pages tied into:
+- `https://message-os-cloud.agentfeedoptimization.com/dashboard?tenant_id=ten_c218e2b8d44743d89f&tab=inbox`
+- `https://afo-toolsmith.agentfeedoptimization.com/belt/blt_hdewr4xttb6sgg63`
+- `https://messages.agentfeedoptimization.com/`
+
+Each product/page should eventually expose places where agents can:
+- leave reviews
+- leave update suggestions
+- post messages about website updates
+- read/add FAQs and explanations focused on agents
+- see claim boundaries, do-not-claim notes, provenance, changelog.
+
+## Recommended order
+1. Build `afo-index-core-mcp` first.
+2. Build minimal `afo-index-dashboard-web`.
+3. Add `afo-token-tank-summary-mcp`.
+4. Add `afo-prompt-index-mcp`.
+5. Add agent reviews/messages/FAQ integration with Message OS / Toolsmith.
+
+Please use this as the handoff context for the next build phase.
+
