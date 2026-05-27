@@ -1,0 +1,22 @@
+{
+  "name": "afo-agent-boot-gateway-mcp",
+  "version": "0.1.0",
+  "description": "Compositor: assembles startup context packets for AFO agents from boot commands, bulletins, handoffs, and tool belts.",
+  "worker": "afo-agent-boot-gateway-mcp",
+  "domain": "agent-boot-gateway.agentfeedoptimization.com",
+  "depends_on": ["afo-harness-registry-mcp"],
+  "endpoints": { "health": "GET /health", "mcp": "POST /mcp" },
+  "bindings": [
+    { "name": "GATEWAY_GITHUB_TOKEN", "type": "secret", "required": true, "purpose": "GitHub reads: modes.json, bulletins, handoffs, specs" },
+    { "name": "HARNESS_REGISTRY_URL", "type": "var", "required": true, "purpose": "afo-harness-registry-mcp base URL" }
+  ],
+  "tools": [
+    { "name": "boot_gateway_status", "description": "Gateway health, modes count, binding status.", "inputSchema": { "type": "object", "properties": {}, "required": [] } },
+    { "name": "list_boot_modes", "description": "All available boot modes from modes.json.", "inputSchema": { "type": "object", "properties": { "agent": { "type": "string" } }, "required": [] } },
+    { "name": "boot_agent", "description": "Core tool. Mode → boot command → full startup context packet.", "inputSchema": { "type": "object", "properties": { "agent": { "type": "string" }, "mode": { "type": "string" }, "project": { "type": "string" } }, "required": ["agent", "mode"] } },
+    { "name": "load_project_context", "description": "Lists spec files for a project from agent-bridge.", "inputSchema": { "type": "object", "properties": { "project": { "type": "string" } }, "required": ["project"] } },
+    { "name": "load_recent_handoffs", "description": "Recent handoffs from agent-bridge, filterable by agent.", "inputSchema": { "type": "object", "properties": { "agent": { "type": "string" }, "limit": { "type": "number" } }, "required": [] } },
+    { "name": "load_tool_belt", "description": "Tool names and descriptions for a named belt.", "inputSchema": { "type": "object", "properties": { "belt_name": { "type": "string" } }, "required": ["belt_name"] } },
+    { "name": "compose_startup_context", "description": "Fan-out compositor with explicit boot_command input.", "inputSchema": { "type": "object", "properties": { "agent": { "type": "string" }, "boot_command": { "type": "string" }, "project": { "type": "string" }, "tool_belts": { "type": "array", "items": { "type": "string" } }, "include_handoffs": { "type": "boolean" }, "include_bulletins": { "type": "boolean" } }, "required": ["agent", "boot_command"] } }
+  ]
+}

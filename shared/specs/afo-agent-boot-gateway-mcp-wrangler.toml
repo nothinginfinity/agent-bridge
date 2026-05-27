@@ -1,0 +1,14 @@
+name = "afo-agent-boot-gateway-mcp"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[vars]
+ENVIRONMENT = "production"
+HARNESS_REGISTRY_URL = "https://harness-registry.agentfeedoptimization.com"
+
+# Secrets (add via CF dashboard or wrangler secret put)
+# GATEWAY_GITHUB_TOKEN = "<github-pat-with-contents-read>"
+
+[[routes]]
+pattern = "agent-boot-gateway.agentfeedoptimization.com/*"
+zone_name = "agentfeedoptimization.com"

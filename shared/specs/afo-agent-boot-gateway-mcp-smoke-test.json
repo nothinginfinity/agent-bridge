@@ -1,0 +1,16 @@
+{
+  "worker": "afo-agent-boot-gateway-mcp",
+  "version": "0.1.0",
+  "base_url": "https://agent-boot-gateway.agentfeedoptimization.com",
+  "tests": [
+    { "id": "smoke-01", "name": "Health check", "method": "GET", "path": "/health", "expect_status": 200, "expect_body": { "status": "ok", "bindings": { "GATEWAY_GITHUB_TOKEN": true, "HARNESS_REGISTRY_URL": true } } },
+    { "id": "smoke-02", "name": "tools/list returns 7 tools", "method": "POST", "path": "/mcp", "body": { "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {} }, "expect_status": 200, "expect_tool_count": 7 },
+    { "id": "smoke-03", "name": "boot_gateway_status", "method": "POST", "path": "/mcp", "body": { "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": { "name": "boot_gateway_status", "arguments": {} } }, "expect_status": 200, "expect_result_fields": ["modes_count", "harness_registry_url"] },
+    { "id": "smoke-04", "name": "list_boot_modes returns modes", "method": "POST", "path": "/mcp", "body": { "jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": { "name": "list_boot_modes", "arguments": {} } }, "expect_status": 200, "expect_result_min_count": 1 },
+    { "id": "smoke-05", "name": "boot_agent exact mode", "method": "POST", "path": "/mcp", "body": { "jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": { "name": "boot_agent", "arguments": { "agent": "claude", "mode": "cloudflare-deploy" } } }, "expect_status": 200, "expect_result_fields": ["schema_version", "boot", "context_sources", "fallback_used", "warnings", "loaded_at"] },
+    { "id": "smoke-06", "name": "boot_agent alias resolution", "method": "POST", "path": "/mcp", "body": { "jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": { "name": "boot_agent", "arguments": { "agent": "chatgpt", "mode": "toolsmith" } } }, "expect_status": 200, "expect_result_field_value": { "mode": "toolsmith-builder" } },
+    { "id": "smoke-07", "name": "boot_agent unknown mode returns error", "method": "POST", "path": "/mcp", "body": { "jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": { "name": "boot_agent", "arguments": { "agent": "alice", "mode": "nonexistent-mode" } } }, "expect_status": 200, "expect_error": true },
+    { "id": "smoke-08", "name": "load_recent_handoffs", "method": "POST", "path": "/mcp", "body": { "jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": { "name": "load_recent_handoffs", "arguments": { "agent": "alice", "limit": 3 } } }, "expect_status": 200 },
+    { "id": "smoke-09", "name": "compose_startup_context explicit boot_command", "method": "POST", "path": "/mcp", "body": { "jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": { "name": "compose_startup_context", "arguments": { "agent": "alice", "boot_command": "boot-mcp", "project": "afo-harness-registry-mcp" } } }, "expect_status": 200, "expect_result_fields": ["schema_version", "context_sources", "fallback_used"] }
+  ]
+}
