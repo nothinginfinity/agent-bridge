@@ -1,0 +1,27 @@
+{
+  "name": "cloudflare-domain-manager-mcp",
+  "version": "0.1.0",
+  "description": "Manages Cloudflare Worker custom domains and D1 database lifecycle. Resolves BLT-016 gaps 1-5.",
+  "worker_name": "cloudflare-domain-manager-mcp",
+  "domain": "cloudflare-domain-manager.agentfeedoptimization.com",
+  "endpoints": {
+    "health": "GET /health",
+    "mcp": "POST /mcp"
+  },
+  "bindings": [
+    { "type": "secret", "name": "CF_API_TOKEN", "description": "Cloudflare API token — Workers:Edit, CustomDomains:Edit, DNS:Edit, D1:Edit" },
+    { "type": "var", "name": "CF_ACCOUNT_ID", "description": "Cloudflare account ID" }
+  ],
+  "tools": [
+    { "name": "domain_manager_status", "description": "Health and version status", "resolves_gap": null },
+    { "name": "add_custom_domain", "description": "Attach hostname to Worker via Custom Domain API", "resolves_gap": "BLT-016 Gap 1" },
+    { "name": "remove_custom_domain", "description": "Detach custom domain by domain record ID", "resolves_gap": "BLT-016 Gap 1" },
+    { "name": "list_custom_domains", "description": "List all custom domains for a Worker", "resolves_gap": "BLT-016 Gap 4" },
+    { "name": "list_all_worker_domains", "description": "Full account domain map across all Workers", "resolves_gap": "BLT-016 Gap 4" },
+    { "name": "check_domain_health", "description": "HTTP health check + latency for a hostname", "resolves_gap": "BLT-016 Gap 5" },
+    { "name": "list_d1_databases", "description": "List all D1 databases with UUID", "resolves_gap": "BLT-016 Gap 2" },
+    { "name": "create_d1_database", "description": "Create new D1 database, returns UUID", "resolves_gap": "BLT-016 Gap 3" }
+  ],
+  "doctrine": "Always Custom Domain API. Never zone-level Worker routes.",
+  "blt_origin": "BLT-016"
+}

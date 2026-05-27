@@ -1,0 +1,18 @@
+name = "cloudflare-domain-manager-mcp"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+CF_ACCOUNT_ID = "YOUR_ACCOUNT_ID"
+
+# Secrets (add via: wrangler secret put CF_API_TOKEN)
+# CF_API_TOKEN — required scopes:
+#   Workers Scripts:Edit
+#   Workers Custom Domains:Edit
+#   DNS:Edit
+#   D1:Edit
+
+# Custom domain (assign via Cloudflare dashboard or cloudflare-domain-manager-mcp itself)
+# routes = []
+# [[routes]]
+# pattern = "cloudflare-domain-manager.agentfeedoptimization.com"

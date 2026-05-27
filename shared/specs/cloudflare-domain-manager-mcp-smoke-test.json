@@ -1,0 +1,68 @@
+{
+  "mcp": "cloudflare-domain-manager-mcp",
+  "version": "0.1.0",
+  "base_url": "https://cloudflare-domain-manager.agentfeedoptimization.com",
+  "tests": [
+    {
+      "id": "health-ok",
+      "method": "GET",
+      "path": "/health",
+      "expect": { "status": 200, "body.status": "ok", "body.bindings.cf_api_token": true, "body.bindings.cf_account_id": true }
+    },
+    {
+      "id": "initialize",
+      "method": "POST",
+      "path": "/mcp",
+      "body": { "jsonrpc": "2.0", "id": "1", "method": "initialize", "params": { "protocolVersion": "2024-11-05", "clientInfo": { "name": "smoke-test", "version": "1.0" } } },
+      "expect": { "status": 200, "body.result.serverInfo.name": "cloudflare-domain-manager-mcp" }
+    },
+    {
+      "id": "tools-list",
+      "method": "POST",
+      "path": "/mcp",
+      "body": { "jsonrpc": "2.0", "id": "2", "method": "tools/list" },
+      "expect": { "status": 200, "body.result.tools.length": 8 }
+    },
+    {
+      "id": "status-tool",
+      "method": "POST",
+      "path": "/mcp",
+      "body": { "jsonrpc": "2.0", "id": "3", "method": "tools/call", "params": { "name": "domain_manager_status", "arguments": {} } },
+      "expect": { "status": 200, "body.result.content[0].type": "text" }
+    },
+    {
+      "id": "list-all-domains",
+      "method": "POST",
+      "path": "/mcp",
+      "body": { "jsonrpc": "2.0", "id": "4", "method": "tools/call", "params": { "name": "list_all_worker_domains", "arguments": {} } },
+      "expect": { "status": 200, "body.result.content[0].type": "text", "parsed.success": true }
+    },
+    {
+      "id": "list-d1-databases",
+      "method": "POST",
+      "path": "/mcp",
+      "body": { "jsonrpc": "2.0", "id": "5", "method": "tools/call", "params": { "name": "list_d1_databases", "arguments": {} } },
+      "expect": { "status": 200, "parsed.success": true, "parsed.databases": "array" }
+    },
+    {
+      "id": "check-domain-health-gateway",
+      "method": "POST",
+      "path": "/mcp",
+      "body": { "jsonrpc": "2.0", "id": "6", "method": "tools/call", "params": { "name": "check_domain_health", "arguments": { "hostname": "cloudflare-multipart-mcp.agentfeedoptimization.com", "path": "/health" } } },
+      "expect": { "status": 200, "parsed.status_code": 200 }
+    },
+    {
+      "id": "unknown-tool-error",
+      "method": "POST",
+      "path": "/mcp",
+      "body": { "jsonrpc": "2.0", "id": "7", "method": "tools/call", "params": { "name": "nonexistent_tool", "arguments": {} } },
+      "expect": { "status": 200, "body.error.message": "contains:UNKNOWN_TOOL" }
+    },
+    {
+      "id": "cors-preflight",
+      "method": "OPTIONS",
+      "path": "/mcp",
+      "expect": { "status": 204 }
+    }
+  ]
+}
