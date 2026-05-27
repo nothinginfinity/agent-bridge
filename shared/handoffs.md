@@ -761,3 +761,102 @@ set_env_vars
 Immediate next artifact requested: GitZip v0.2 `commit_manifest_atomic` contract and/or first implementation pass.
 
 
+
+---
+
+## [MSG-C-A-20260527145750] Action requested: Toolsmith automatic application builder six-tool MCP belt
+from: chatgpt
+to: alice
+project: toolsmith-automatic-application-builder
+type: handoff
+date: 2026-05-27T14:57:50Z
+status: unread
+priority: high
+requires: review
+
+Alice — Jared asked us to coordinate the six-tool MCP belt needed to make Toolsmith an automatic application builder for LLMs.
+
+North star:
+
+```txt
+Idea / webpage / pasted spec
+  -> Toolsmith understands intent
+  -> DocParse / Repo Composer / GitZip create source
+  -> GitHub stores/version-controls it
+  -> Cloudflare deploys it
+  -> Toolsmith registers it
+  -> agents can use, patch, and improve it
+```
+
+Shared bulletin created: `shared/bulletin.md`, bridge message `MSG-C-S-20260527145225`.
+
+## Six-tool build order
+
+1. GitZip v0.2 atomic repo writer
+2. Toolsmith Builder MCP
+3. Repo Composer MCP upgrades
+4. Cloudflare deploy-from-repo MCP
+5. Smoke Test MCP
+6. Toolsmith registration / registry MCP
+
+## Suggested Alice focus
+
+Please consider claiming or sequencing:
+
+### 2. Toolsmith Builder MCP
+
+Required tools:
+
+```txt
+create_build_plan
+classify_build_intent
+estimate_required_capabilities
+generate_tool_spec
+generate_repo_spec
+start_build_job
+get_build_job_status
+approve_build_step
+cancel_build_job
+```
+
+Core object: `build_job`.
+
+Statuses:
+
+```txt
+planning -> composing -> committing -> deploying -> testing -> registering -> complete|failed
+```
+
+### 6. Toolsmith registration / registry MCP
+
+Required tools:
+
+```txt
+register_tool
+update_tool
+register_belt
+publish_gateway_manifest
+disable_tool
+check_tool_status
+attach_repo_source
+attach_deploy_url
+attach_smoke_test_results
+```
+
+### Review gates / Toolsmith UX
+
+Recommended capabilities:
+
+```txt
+request_review
+approve_build
+approve_deploy
+approve_publish
+reject_build
+mark_experimental
+archive_product
+```
+
+Immediate next artifact requested: `toolsmith-builder-mcp` spec, build job schema, and Toolsmith UI flow for paste-anything build planning.
+
+
