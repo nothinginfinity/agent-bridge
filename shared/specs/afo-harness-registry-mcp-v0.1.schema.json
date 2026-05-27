@@ -1,0 +1,73 @@
+{
+  "name": "afo-harness-registry-mcp",
+  "version": "0.1.0",
+  "description": "Live, always-in-sync registry for AFO agent boot commands. GitHub-backed, read-only.",
+  "worker": "afo-harness-registry-mcp",
+  "domain": "harness-registry.agentfeedoptimization.com",
+  "endpoints": {
+    "health": "GET /health",
+    "mcp": "POST /mcp"
+  },
+  "tools": [
+    {
+      "name": "harness_status",
+      "description": "Returns registry health, total command count, and agent list.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "list_boot_commands",
+      "description": "Returns all available boot commands as structured objects. Filterable by agent.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "enum": ["alice", "claude", "chatgpt", "all"],
+            "description": "Filter by agent. Omit or pass 'all' for the full list."
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "get_boot_command",
+      "description": "Returns full structured object for a named boot command, including complete markdown content.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Boot command name, e.g. 'boot-deploy' or 'boot-list'"
+          }
+        },
+        "required": ["name"]
+      }
+    },
+    {
+      "name": "search_boot_commands",
+      "description": "Keyword search across command names and descriptions.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search keyword, e.g. 'deploy', 'D1', 'spec'"
+          }
+        },
+        "required": ["query"]
+      }
+    }
+  ],
+  "bindings": [
+    {
+      "name": "GITHUB_TOKEN",
+      "type": "secret",
+      "required": true,
+      "purpose": "GitHub Contents API reads from nothinginfinity/versioned-agent-harness"
+    }
+  ]
+}

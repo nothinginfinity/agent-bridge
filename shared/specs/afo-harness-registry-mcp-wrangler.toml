@@ -1,0 +1,13 @@
+name = "afo-harness-registry-mcp"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[vars]
+ENVIRONMENT = "production"
+
+# Secrets (add via CF dashboard or wrangler secret put)
+# GITHUB_TOKEN = "<github-pat-with-contents-read>"
+
+[[routes]]
+pattern = "harness-registry.agentfeedoptimization.com/*"
+zone_name = "agentfeedoptimization.com"

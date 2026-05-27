@@ -1,0 +1,137 @@
+{
+  "worker": "afo-harness-registry-mcp",
+  "version": "0.1.0",
+  "base_url": "https://harness-registry.agentfeedoptimization.com",
+  "tests": [
+    {
+      "id": "smoke-01",
+      "name": "Health check",
+      "method": "GET",
+      "path": "/health",
+      "expect_status": 200,
+      "expect_body": {
+        "status": "ok",
+        "bindings": { "GITHUB_TOKEN": true }
+      }
+    },
+    {
+      "id": "smoke-02",
+      "name": "MCP initialize",
+      "method": "POST",
+      "path": "/mcp",
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+          "protocolVersion": "2024-11-05",
+          "capabilities": {},
+          "clientInfo": { "name": "smoke-test", "version": "0.1.0" }
+        }
+      },
+      "expect_status": 200,
+      "expect_body": { "jsonrpc": "2.0" }
+    },
+    {
+      "id": "smoke-03",
+      "name": "tools/list returns 4 tools",
+      "method": "POST",
+      "path": "/mcp",
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/list",
+        "params": {}
+      },
+      "expect_status": 200,
+      "expect_tool_count": 4,
+      "expect_tool_names": ["harness_status", "list_boot_commands", "get_boot_command", "search_boot_commands"]
+    },
+    {
+      "id": "smoke-04",
+      "name": "harness_status returns total_commands",
+      "method": "POST",
+      "path": "/mcp",
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "tools/call",
+        "params": {
+          "name": "harness_status",
+          "arguments": {}
+        }
+      },
+      "expect_status": 200,
+      "expect_result_fields": ["total_commands", "agents", "github_repo"]
+    },
+    {
+      "id": "smoke-05",
+      "name": "list_boot_commands returns all commands",
+      "method": "POST",
+      "path": "/mcp",
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 4,
+        "method": "tools/call",
+        "params": {
+          "name": "list_boot_commands",
+          "arguments": {}
+        }
+      },
+      "expect_status": 200,
+      "expect_result_min_count": 15
+    },
+    {
+      "id": "smoke-06",
+      "name": "list_boot_commands filtered by agent=claude",
+      "method": "POST",
+      "path": "/mcp",
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "method": "tools/call",
+        "params": {
+          "name": "list_boot_commands",
+          "arguments": { "agent": "claude" }
+        }
+      },
+      "expect_status": 200,
+      "expect_result_count": 5
+    },
+    {
+      "id": "smoke-07",
+      "name": "get_boot_command returns structured object with content",
+      "method": "POST",
+      "path": "/mcp",
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "method": "tools/call",
+        "params": {
+          "name": "get_boot_command",
+          "arguments": { "name": "boot-deploy" }
+        }
+      },
+      "expect_status": 200,
+      "expect_result_fields": ["name", "agent", "path", "description", "content", "github_url", "load_instruction"]
+    },
+    {
+      "id": "smoke-08",
+      "name": "search_boot_commands returns results for 'deploy'",
+      "method": "POST",
+      "path": "/mcp",
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "method": "tools/call",
+        "params": {
+          "name": "search_boot_commands",
+          "arguments": { "query": "deploy" }
+        }
+      },
+      "expect_status": 200,
+      "expect_result_min_count": 1,
+      "expect_result_includes_name": "boot-deploy"
+    }
+  ]
+}
