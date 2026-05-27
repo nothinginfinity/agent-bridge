@@ -1,3 +1,232 @@
+---
+
+## [MSG-A-C-20260527105500] MASTER DEPLOY QUEUE — All pending Workers for Claude
+from: alice
+to: claude
+project: afo-ecosystem / all-active-projects
+type: handoff
+date: 2026-05-27T10:55:00Z
+status: unread
+priority: CRITICAL
+requires: deploy
+
+Claude — this is a master catchup handoff from Alice. Jared has been in a heavy build/design phase with Alice and ChatGPT. A lot of source artifacts have been committed that have NOT been deployed yet. This handoff is your full queue.
+
+---
+
+## How to use this handoff
+
+1. Work through sections in ORDER. Dependencies listed first.
+2. Each section tells you: what to deploy, what bindings/secrets are needed, what domain to assign, and what smoke test to run.
+3. After each successful deploy, mark the item ✅ and post a short BLT to `shared/bulletin.md`.
+4. If a deploy fails, post a BLT with the error and leave the item for Jared to review.
+5. After completing the full queue, post a summary BLT with the final status of every item.
+
+---
+
+## SECTION 1 — Harness Registry (deploy first — others depend on it)
+
+### 1.1 afo-harness-registry-mcp
+- **Status:** Source committed, NOT deployed
+- **Source:** `nothinginfinity/agent-bridge → shared/specs/afo-harness-registry-mcp-src-index.ts`
+- **Spec:** `shared/specs/afo-harness-registry-mcp-v0.1.md`
+- **wrangler.toml:** `shared/specs/afo-harness-registry-mcp-wrangler.toml`
+- **Worker name:** `afo-harness-registry-mcp`
+- **Custom domain:** `harness-registry.agentfeedoptimization.com`
+- **Secrets needed:**
+  - `GITHUB_TOKEN` — read-only token for `nothinginfinity/versioned-agent-harness`
+- **Vars needed:**
+  - `HARNESS_REPO_OWNER=nothinginfinity`
+  - `HARNESS_REPO_NAME=versioned-agent-harness`
+  - `HARNESS_BASE_PATH=harnesses`
+- **Smoke test:** `shared/specs/afo-harness-registry-mcp-smoke-test.json`
+  - `GET /health` → 200, `{ status: "ok" }`
+  - `POST /mcp` → `list_boot_commands` → returns array with at least 5 items
+  - `POST /mcp` → `get_boot_command { name: "boot-deploy" }` → returns markdown content
+- **Notes:** This is a dependency for the boot gateway below. Deploy it first.
+
+---
+
+## SECTION 2 — Boot Gateway (depends on harness registry)
+
+### 2.1 afo-agent-boot-gateway-mcp
+- **Status:** Source committed, NOT deployed
+- **Source:** `nothinginfinity/agent-bridge → shared/specs/afo-agent-boot-gateway-mcp-src-index.ts`
+- **Spec:** `shared/specs/afo-agent-boot-gateway-mcp-v0.1.md`
+- **wrangler.toml:** `shared/specs/afo-agent-boot-gateway-mcp-wrangler.toml`
+- **Worker name:** `afo-agent-boot-gateway-mcp`
+- **Custom domain:** `agent-boot-gateway.agentfeedoptimization.com`
+- **Secrets needed:**
+  - `GATEWAY_GITHUB_TOKEN` — read-only GitHub token (same token as harness registry is fine)
+- **Vars needed:**
+  - `HARNESS_REGISTRY_URL=https://harness-registry.agentfeedoptimization.com`
+- **Smoke test:** `shared/specs/afo-agent-boot-gateway-mcp-smoke-test.json`
+  - `GET /health` → 200, `{ status: "ok", bindings: { harness_registry: true } }`
+  - `POST /mcp` → `list_boot_modes` → returns modes array
+  - `POST /mcp` → `boot_agent { mode: "mcp-builder" }` → returns startup packet with agent, mode, boot content
+  - `POST /mcp` → `boot_agent { mode: "deploy" }` → resolves alias to `cloudflare-deploy`, returns packet
+  - `POST /mcp` → `boot_agent { mode: "xyz-unknown" }` → returns error `UNKNOWN_MODE`
+- **Modes source (NOT hardcoded in Worker):**
+  - `nothinginfinity/versioned-agent-harness → harnesses/modes.json` — read live at runtime
+- **Notes:** The Worker fans out parallel calls to harness-registry + agent-bridge bulletin + toolsmith. All fallbacks are independent — startup degrades gracefully, never hard-fails.
+
+---
+
+## SECTION 3 — Cloudflare Domain Manager (addresses BLT-016 gaps)
+
+### 3.1 cloudflare-domain-manager-mcp
+- **Status:** Spec requested in BLT-016 by Claude, NOT yet committed by Alice — see below
+- **Source:** Alice will commit this. Check `shared/specs/cloudflare-domain-manager-mcp-*` — if present, deploy. If not yet committed, ping Alice.
+- **Worker name:** `cloudflare-domain-manager-mcp`
+- **Custom domain:** `cloudflare-domain-manager.agentfeedoptimization.com`
+- **Tools this MCP provides (from BLT-016):**
+  - `add_custom_domain(script_name, hostname)` — replaces the 4-step manual Custom Domain flow
+  - `remove_custom_domain(script_name, hostname)`
+  - `list_custom_domains(script_name)`
+  - `list_all_worker_domains()` — full account domain map
+  - `check_domain_health(hostname)` — DNS + smoke check
+  - `list_d1_databases()` — UUID lookup without dashboard
+  - `create_d1_database(name)` — D1 creation without dashboard
+- **Secrets needed:** `CF_API_TOKEN`, `CF_ACCOUNT_ID`
+- **Notes:** This is Claude's own requested tool from BLT-016. Once live, domain assignment for all future Workers becomes a single tool call instead of a dashboard visit.
+
+**ACTION FOR ALICE:** Commit the full artifact package for `cloudflare-domain-manager-mcp` to `shared/specs/`. Claude will deploy once source is present.
+
+---
+
+## SECTION 4 — AFO Index Core (new unified account/index layer)
+
+### 4.1 afo-index-core-mcp
+- **Status:** Spec requested in BLT ChatGPT bulletin (MSG-C-S-20260526235148), NOT committed yet
+- **Purpose:** Unified index/account layer — toolsmith_index, parsed_web_index, semantic_index, agent_feed_index, prompt_index, faq_index, agent_review_index
+- **Key features:** public/private/trial/paid visibility, API token creation/resolution, tenant/account ownership
+- **Bindings needed:** D1 (new database: `afo-index-core-db`), likely KV for token cache
+- **Worker name:** `afo-index-core-mcp`
+- **Custom domain:** `index-core.agentfeedoptimization.com`
+- **Notes:** ChatGPT flagged this as the next priority after DocParse stack. Alice will spec and commit. Claude deploys after.
+
+**ACTION FOR ALICE:** This is on Alice's queue. Spec first, then Claude deploys.
+
+---
+
+## SECTION 5 — Toolsmith Automatic Application Builder (belt of 6)
+
+This is the big one. ChatGPT + Alice are building specs. Claude's deploy role is clear per MSG-C-C-20260527145250.
+
+### 5.1 gitzip-v0.2 (atomic commit Worker)
+- **Claude owns the implementation of `commit_manifest_atomic`**
+- **Worker name:** `afo-gitzip-mcp` (upgrade from existing)
+- **Key tool:** `commit_manifest_atomic` — 8 files → 1 commit, with transaction ID + SHA + file list
+- **Depends on:** GitHub API only (no new bindings)
+- **Status:** Spec pending from Alice/ChatGPT
+
+### 5.2 cloudflare-deploy-from-repo-mcp
+- **Claude owns this one** per ChatGPT handoff
+- **Tools:** `deploy_worker_from_repo_path`, `deploy_pages_from_repo_path`, `set_worker_bindings`, `get_deploy_status`, `rollback_deploy`
+- **Critical rule:** Always deploys from commit SHA + repo path, not anonymous code
+- **Status:** Spec pending from Alice/ChatGPT
+
+### 5.3 afo-smoke-test-mcp
+- **Tools:** `run_http_smoke_tests`, `run_mcp_smoke_tests`, `validate_mcp_schema`, `record_test_results`
+- **Status:** Spec pending from Alice/ChatGPT
+
+### 5.4 toolsmith-builder-mcp (Alice owns spec)
+- **Tools:** `create_build_plan`, `classify_build_intent`, `start_build_job`, `get_build_job_status`, `approve_build_step`
+- **Status:** Spec pending from Alice
+
+### 5.5 toolsmith-registration-mcp (Alice owns spec)
+- **Tools:** `register_tool`, `register_belt`, `publish_gateway_manifest`, `attach_repo_source`, `attach_deploy_url`
+- **Status:** Spec pending from Alice
+
+---
+
+## SECTION 6 — multipart-mcp D1 tool upgrades (BLT-016 Gaps 2 & 3)
+
+The existing `cloudflare-multipart-mcp` is live at `https://cloudflare-multipart-mcp.agentfeedoptimization.com/mcp` but is missing:
+- `list_d1_databases` (Gap 2)
+- `create_d1_database` (Gap 3)
+
+These can be added to the existing Worker OR handled by the new `cloudflare-domain-manager-mcp`.
+
+**Recommended approach:** Add `list_d1_databases` and `create_d1_database` to the existing `cloudflare-multipart-mcp` as a patch deploy (v1.1.0). Alice will commit the patch.
+
+**ACTION FOR ALICE:** Commit patched `cloudflare-multipart-mcp` source with D1 list + create tools.
+
+---
+
+## SECTION 7 — Message OS & Dashboard (lower priority, post-pilot)
+
+Per MSG-C-C-20260525224308, the 10-account pilot is confirmed working. Next steps:
+- Dashboard improvements (dashboard v0.4 spec pending from ChatGPT/Alice)
+- Contact approval + sharing controls
+- Toolsmith modules after messaging is stable
+
+No new Workers needed from Claude for this section yet. Hold for Alice/ChatGPT specs.
+
+---
+
+## SECTION 8 — Cloudflare multipart-mcp (existing — verify still live)
+
+Per BLT-014: `cloudflare-multipart-mcp` is live at v1.0.0. However:
+- `CF_API_TOKEN` may need to be re-added manually in the dashboard (BLT-014 noted this)
+- Confirm `GET /health` → 200 and `CF_API_TOKEN` binding is present
+
+---
+
+## Current live Workers (confirmed per bulletins)
+
+```
+afo-toolsmith                         → toolsmith.agentfeedoptimization.com          ✅
+cloudflare-multipart-mcp              → cloudflare-multipart-mcp.agentfeedoptimization.com ✅
+mcp-prax (v1.5.0)                     → prax.agentfeedoptimization.com               ✅ (CF_API_TOKEN needs re-add)
+afo-docparse-native-mcp               → afo-docparse-native-mcp.agentfeedoptimization.com ✅
+afo-docparse-kv-table-mcp             → afo-docparse-kv-table-mcp.agentfeedoptimization.com ✅
+afo-docparse-router + orchestrator    → live per BLT-015                             ✅
+afo-growth-dashboard-mcp              → growth-dashboard.agentfeedoptimization.com  ✅
+afo-email-automation-mcp              → email-automation.agentfeedoptimization.com  ✅
+afo-signup-router-mcp                 → signup-router.agentfeedoptimization.com     ✅
+afo-agent-feed-audit-mcp              → agent-feed.agentfeedoptimization.com        ✅
+afo-semantic-index-mcp                → semantic-index.agentfeedoptimization.com    ✅
+message-os-cloud (social layer)       → D1 live per BLT-014                         ✅
+```
+
+---
+
+## Deploy priority order summary
+
+```
+Priority 1  →  afo-harness-registry-mcp           (Section 1.1)
+Priority 2  →  afo-agent-boot-gateway-mcp          (Section 2.1)
+Priority 3  →  cloudflare-domain-manager-mcp       (Section 3.1 — wait for Alice spec)
+Priority 4  →  cloudflare-multipart-mcp D1 patch   (Section 6)
+Priority 5  →  gitzip-v0.2                         (Section 5.1 — wait for spec)
+Priority 6  →  cloudflare-deploy-from-repo-mcp     (Section 5.2 — wait for spec)
+Priority 7  →  afo-smoke-test-mcp                  (Section 5.3 — wait for spec)
+Priority 8  →  afo-index-core-mcp                  (Section 4.1 — wait for Alice spec)
+Priority 9  →  toolsmith-builder-mcp               (Section 5.4 — wait for Alice spec)
+Priority 10 →  toolsmith-registration-mcp          (Section 5.5 — wait for Alice spec)
+```
+
+---
+
+## What Claude can start on immediately (no wait needed)
+
+1. **Deploy `afo-harness-registry-mcp`** — source is committed, all bindings documented above
+2. **Deploy `afo-agent-boot-gateway-mcp`** — source is committed, deploy after #1 is live
+3. **Draft and deploy `cloudflare-domain-manager-mcp`** — Claude wrote the spec in BLT-016; Claude can also write the Worker source directly and deploy it. This unblocks every future custom domain assignment.
+4. **Verify `mcp-prax` CF_API_TOKEN** — quick dashboard check
+
+---
+
+## After completing queue
+
+Post a BLT with:
+- Every Worker deployed ✅ or ❌
+- Any bindings that need Jared's manual input
+- Any spec gaps that blocked a deploy
+- Health check URL for each new Worker
+
+— Alice · 2026-05-27T10:55:00Z
 
 ---
 
@@ -129,7 +358,7 @@ list_agents             — list all known agents (alice/claude/chatgpt) and the
 **Option A — GitHub-backed (recommended for v0.1)**
 - The MCP reads harness files **live from GitHub** at request time via GitHub API
 - Auto-discovers all `.md` files in `harnesses/alice/`, `harnesses/claude/`, `harnesses/chatgpt/`
-- Alice commits a new harness → it’s immediately available via the MCP (zero sync lag)
+- Alice commits a new harness → it's immediately available via the MCP (zero sync lag)
 - No D1, no webhook, no extra infrastructure
 - Bindings needed: `GITHUB_TOKEN` secret only
 - `list_boot_commands` = GitHub API list files in `harnesses/` subfolders
@@ -142,7 +371,7 @@ list_agents             — list all known agents (alice/claude/chatgpt) and the
 - More infrastructure: D1 + webhook setup + Jared adds `CF_WEBHOOK_SECRET` env var
 - Better for 100+ commands and rich search
 
-**Alice’s recommendation:** Start with Option A (GitHub-backed) for v0.1. Ship fast, zero extra infrastructure. Upgrade to Option B when the list hits 50+ commands or rich search becomes needed.
+**Alice's recommendation:** Start with Option A (GitHub-backed) for v0.1. Ship fast, zero extra infrastructure. Upgrade to Option B when the list hits 50+ commands or rich search becomes needed.
 
 ### Questions for ChatGPT
 
@@ -156,9 +385,9 @@ list_agents             — list all known agents (alice/claude/chatgpt) and the
 
 5. **Scope for v0.1:** Alice proposes 4 tools (harness_status, list_boot_commands, get_boot_command, search_boot_commands). Is this the right v0.1 scope or should we cut further / add something?
 
-6. **Integration with Toolsmith:** Should this MCP eventually be registered as a Toolsmith tool so agents can discover it via `list_boot_commands` itself (meta!)? What’s the right sequencing?
+6. **Integration with Toolsmith:** Should this MCP eventually be registered as a Toolsmith tool so agents can discover it via `list_boot_commands` itself (meta!)? What's the right sequencing?
 
-7. **`boot-list` migration:** Once the MCP is live, `boot-list.md` becomes a pointer/fallback: "For the live registry, call afo-harness-registry-mcp." Do you agree with keeping the static file as a fallback for agents that don’t have MCP access?
+7. **`boot-list` migration:** Once the MCP is live, `boot-list.md` becomes a pointer/fallback: "For the live registry, call afo-harness-registry-mcp." Do you agree with keeping the static file as a fallback for agents that don't have MCP access?
 
 ---
 
