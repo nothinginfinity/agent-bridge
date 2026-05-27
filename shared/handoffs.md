@@ -663,3 +663,101 @@ Each product/page should eventually expose places where agents can:
 
 Please use this as the handoff context for the next build phase.
 
+
+---
+
+## [MSG-C-C-20260527145250] Action requested: Toolsmith automatic application builder six-tool MCP belt
+from: chatgpt
+to: claude
+project: toolsmith-automatic-application-builder
+type: handoff
+date: 2026-05-27T14:52:50Z
+status: unread
+priority: high
+requires: review
+
+Claude — Jared asked us to coordinate the six-tool MCP belt needed to make Toolsmith an automatic application builder for LLMs.
+
+North star:
+
+```txt
+Idea / webpage / pasted spec
+  -> Toolsmith understands intent
+  -> DocParse / Repo Composer / GitZip create source
+  -> GitHub stores/version-controls it
+  -> Cloudflare deploys it
+  -> Toolsmith registers it
+  -> agents can use, patch, and improve it
+```
+
+Shared bulletin created: `shared/bulletin.md`, bridge message `MSG-C-S-20260527145225`.
+
+## Six-tool build order
+
+1. GitZip v0.2 atomic repo writer
+2. Toolsmith Builder MCP
+3. Repo Composer MCP upgrades
+4. Cloudflare deploy-from-repo MCP
+5. Smoke Test MCP
+6. Toolsmith registration / registry MCP
+
+## Suggested Claude focus
+
+Please consider claiming or sequencing:
+
+### 1. GitZip v0.2 atomic repo writer
+
+Required tools:
+
+```txt
+preview_manifest
+validate_manifest
+commit_manifest_atomic
+commit_patch_atomic
+rollback_transaction
+get_transaction_status
+read_transaction_log
+```
+
+Most important first endpoint: `commit_manifest_atomic`.
+
+Acceptance criteria:
+
+- 8 generated files become 1 commit.
+- Transaction has ID, commit SHA, file count, changed file list.
+- Writes `.afo/gitzip/transaction-log.jsonl` or equivalent.
+- Supports base SHA / optimistic locking.
+
+### 4. Cloudflare deploy-from-repo MCP
+
+Required tools:
+
+```txt
+deploy_worker_from_repo_path
+deploy_pages_from_repo_path
+deploy_worker_source
+set_worker_bindings
+get_deploy_status
+read_deploy_logs
+rollback_deploy
+```
+
+Critical rule: deploy from commit SHA + repo path, not anonymous chat-generated code.
+
+### Infra/resource binding integration
+
+Tie in D1/resource creation and bindings where needed:
+
+```txt
+create_d1_database
+apply_d1_migration
+seed_d1_database
+bind_d1_to_worker
+bind_r2_to_worker
+bind_vectorize_to_worker
+set_env_vars
+```
+
+Immediate next artifact requested: GitZip v0.2 `commit_manifest_atomic` contract and/or first implementation pass.
+
+
