@@ -1,0 +1,68 @@
+{
+  "mcp": "toolsmith-builder-mcp",
+  "version": "0.1.0",
+  "health_url": "https://toolsmith-builder-mcp.agentfeedoptimization.com/health",
+  "mcp_url": "https://toolsmith-builder-mcp.agentfeedoptimization.com/mcp",
+  "tests": [
+    {
+      "id": "smoke-01",
+      "name": "status tool",
+      "tool": "toolsmith_builder_status",
+      "args": {},
+      "expect": { "status": "ok", "worker": "toolsmith-builder-mcp" }
+    },
+    {
+      "id": "smoke-02",
+      "name": "classify prompt as worker_mcp",
+      "tool": "classify_build_intent",
+      "args": {
+        "source_type": "prompt",
+        "source_ref": "Build a Cloudflare Worker MCP that extracts contact info from a URL"
+      },
+      "expect": { "intent": "worker_mcp", "confidence": "high" }
+    },
+    {
+      "id": "smoke-03",
+      "name": "create build plan for worker_mcp",
+      "tool": "create_build_plan",
+      "args": {
+        "source_type": "prompt",
+        "source_ref": "Build a Cloudflare Worker MCP that extracts contact info from a URL",
+        "intent": "worker_mcp"
+      },
+      "expect": { "plan.repo_type": "worker_mcp", "steps_count": ">= 3" }
+    },
+    {
+      "id": "smoke-04",
+      "name": "start build job",
+      "tool": "start_build_job",
+      "args": {
+        "source_type": "prompt",
+        "source_ref": "Smoke test job — safe to ignore",
+        "intent": "worker_mcp",
+        "plan": {
+          "repo_type": "worker_mcp",
+          "required_mcps": ["cloudflare-multipart-mcp"],
+          "cloudflare_resources": ["custom domain"],
+          "estimated_files": 6,
+          "notes": "Smoke test job"
+        }
+      },
+      "expect": { "ok": true, "job_id_present": true }
+    },
+    {
+      "id": "smoke-05",
+      "name": "list build jobs",
+      "tool": "list_build_jobs",
+      "args": { "limit": 5 },
+      "expect": { "jobs_is_array": true }
+    },
+    {
+      "id": "smoke-06",
+      "name": "cancel requires confirm flag",
+      "tool": "cancel_build_job",
+      "args": { "job_id": "nonexistent-job", "confirm": false },
+      "expect": { "error_present": true }
+    }
+  ]
+}
