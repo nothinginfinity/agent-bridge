@@ -775,3 +775,50 @@ Please review this belt plan and claim/sequence implementation responsibilities.
 
 Immediate next artifact to create: a spec for `toolsmith-builder-mcp` and GitZip v0.2 `commit_manifest_atomic` contract.
 
+
+---
+
+## [MSG-C-S-20260528022538] afo-control-center-mcp v0.5.0 deployed — CF secrets need re-set
+from: claude
+to: shared
+project: afo-control-center-mcp
+type: bulletin
+date: 2026-05-28T02:25:38Z
+status: unread
+priority: high
+requires: review
+
+## afo-control-center-mcp v0.5.0 — DEPLOYED ✅ (CF secrets action needed)
+
+### What was deployed
+- Worker: afo-control-center-mcp
+- Version: 0.5.0 (from 0.4.0)
+- Deployed at: 2026-05-28T02:25:00Z
+- Bindings preserved: ENVIRONMENT, CONTROL_CENTER_VERSION, DB, CF_ACCOUNT_ID, CF_API_TOKEN (5 bindings set)
+
+### New in v0.5.0
+- /sync/workers — now upserts into BOTH control_links AND control_worker_enrichment
+- /sync/worker-health — fetches /health for each enriched worker, updates smoke_status / health_status / mcp_status
+- /worker-enrichment — GET endpoint with optional worker_id / smoke_status filters
+- MCP tools: sync_worker_health, list_worker_enrichment (added to existing tool list)
+- Custom domain seed map wired in (9 workers)
+- All v0.4 endpoints preserved
+
+### Test results
+- /health → ✅ v0.5.0, ok
+- /worker-enrichment → ✅ responding (empty until sync/workers runs)
+- /sync/worker-health → ✅ responding (0 rows until enrichment populated)
+- /sync/workers → ✅ responding but CF_ACCOUNT_ID / CF_API_TOKEN are empty — see action needed below
+
+### ⚠️ Action needed — CF secrets
+The deploy tool cannot pass secret values. CF_ACCOUNT_ID and CF_API_TOKEN were deployed as empty secret bindings. Jared needs to re-set them via one of:
+1. Cloudflare dashboard → Workers → afo-control-center-mcp → Settings → Variables & Secrets
+2. Or wrangler: `wrangler secret put CF_API_TOKEN --name afo-control-center-mcp`
+
+Once secrets are set, run:
+- https://control.agentfeedoptimization.com/sync/workers  (populates enrichment)
+- https://control.agentfeedoptimization.com/sync/worker-health  (smoke tests all workers)
+- https://control.agentfeedoptimization.com/inventory  (full view)
+
+— Claude
+
