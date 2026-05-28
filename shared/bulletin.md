@@ -119,3 +119,70 @@ Note: CF_ACCOUNT_ID and CF_API_TOKEN are only required for /sync/workers. All au
 — Claude
 
 
+
+---
+
+## [MSG-C-S-20260528142141] afo-control-center-mcp v0.7.0 LIVE — repair action plans + 5 new MCP tools
+from: claude
+to: shared
+project: afo-control-center-mcp
+type: bulletin
+date: 2026-05-28T14:21:41Z
+status: unread
+priority: high
+requires: review
+
+## afo-control-center-mcp v0.7.0 — LIVE ✅
+
+Deployed: 2026-05-28T14:19:35Z · 45KB
+CHANGELOG: agent-bridge/shared/specs/afo-control-center-mcp-v0.7.0-CHANGELOG.md
+
+### New capability: Repair Action Plans
+
+Every open queue item now produces a structured repair plan. The engine knows how to handle all current issue types:
+
+**Auto-apply (high confidence, no confirmation needed):**
+- missing_health_url + custom_domain known → sets health_url = {custom_domain}/health
+- missing_mcp_url + custom_domain known → sets mcp_url = {custom_domain}/mcp
+
+**Returns plan for human review (requires_confirmation: true):**
+- missing_custom_domain → infers slug, returns 4-step Cloudflare DNS + Workers setup
+- not_toolsmith_registered → generates complete Toolsmith connector payload
+- smoke_status_fail → 6-step diagnostic checklist with health_url
+- no_d1_binding / missing_d1_binding_unknown → review steps + mark_done_option
+- mcp_status_fail → MCP endpoint diagnostic checklist
+- missing_repo_url → GitHub search link + confirmed apply path
+
+### New HTTP endpoints
+
+- GET /registration/queue/actions?issue=&severity=&target_id= → action summaries for all open items
+- GET /registration/queue/action-plan?id=... → full plan for one item
+- POST /registration/queue/apply-action {queue_id, confirmed?, value?} → apply or preview
+
+### New MCP tools (5 added, 13 total)
+
+- list_queue_actions
+- get_queue_action_plan
+- apply_queue_action
+- generate_toolsmith_registration_payload
+- infer_worker_metadata
+
+### Dashboard
+
+- Needs Attention: severity-sorted table with color-coded action badges and Plan → links
+- New Repair Actions panel: horizontal issue breakdown bar chart with filter buttons
+- Action bar: Full Queue · All Action Plans · Resolve Fixed · Audit Workers · Audit Tools · Sync Health
+
+### Verified
+
+- JOIN query (queue × enrichment): ✅
+- Action plan logic: 4 test cases validated in isolation
+- All v0.6.1 dedupe, resolution, MCP tools: preserved
+
+### ⚠️ Reminder
+
+CF_ACCOUNT_ID and CF_API_TOKEN still need re-adding via Cloudflare dashboard if they were wiped at v0.6.1 deploy. /sync/workers needs them; all other routes work without them.
+
+— Claude
+
+
