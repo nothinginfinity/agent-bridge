@@ -1,9 +1,9 @@
 # Toolsmith Tool Inventory
 
-> **Spec status:** active — updated Batch 2: Social MVP + AFO Mobile MCP Protocol entries  
-> **Last updated:** 2026-05-25  
+> **Spec status:** active — updated Batch 3: widget_support flag + AFO UI Belt v0.1 registration  
+> **Last updated:** 2026-06-01  
 > **Author:** Alice (GitHub build agent)  
-> **Source messages:** MSG-C-A-20260525050146, MSG-C-A-20260525151601, MSG-C-A-20260525170311, MSG-C-A-20260525190336  
+> **Source messages:** MSG-C-A-20260525050146, MSG-C-A-20260525151601, MSG-C-A-20260525170311, MSG-C-A-20260525190336, BLT-017  
 
 Canonical Toolsmith catalogue of all planned, candidate, active, and stable MCP tools and Workers across the AFO / Message OS / Toolsmith ecosystem.
 
@@ -19,6 +19,12 @@ Status stages: `experimental` → `candidate` → `active` → `stable` → `dep
 - **domain:** `message-os-cloud-social-mcp.agentfeedoptimization.com/mcp`
 - **protocol:** AFO Mobile MCP Protocol
 - **belt:** `message-os-cloud-social-builder-belt`
+- **widget_support:** true ✅ (v0.2.0 — BLT-017)
+- **widget_templates:**
+  - `inbox_notification_card` → triggered by `check_inbox` when unread_count > 0
+  - `inbox_empty_card` → triggered by `check_inbox` when inbox clear
+  - `message_thread_card` → triggered by `get_message_thread`
+  - `send_confirmation_card` → triggered by `send_message` success
 - **tools:**
   - `whoami` — return current account identity and handle
   - `get_activation_instructions` — return setup steps for ChatGPT/Claude
@@ -26,13 +32,14 @@ Status stages: `experimental` → `candidate` → `active` → `stable` → `dep
   - `request_contact` — send contact request by handle
   - `accept_contact` — accept a pending contact request
   - `block_contact` — block a contact
-  - `send_message` — send message to approved contact
-  - `check_inbox` — list received messages (unread first)
+  - `send_message` ⬡ — send message to approved contact
+  - `check_inbox` ⬡ — list received messages (unread first)
   - `read_message` — read full message by ID
   - `mark_message_seen` — mark message as read
-  - `propose_inbox_notification_frame` — propose UI frame for in-chat notification
+  - `get_message_thread` ⬡ — get full thread for a contact
+  - `propose_inbox_notification_frame` ⬡ — propose UI frame for in-chat notification
 - **dependencies:** `message-os-cloud-db` D1, social tables (profiles, contacts, contact_requests, user_messages)
-- **notes:** Do NOT patch Message OS v08 directly. New standalone Worker per AFO Versioned MCP Lifecycle.
+- **notes:** ⬡ = Widget-enabled. ChatGPT renders `_meta.widget.html` inline. Claude/Alice receive plain text. Backward compatible. Do NOT patch Message OS v08 directly. New standalone Worker per AFO Versioned MCP Lifecycle.
 
 ---
 
@@ -162,7 +169,113 @@ Status stages: `experimental` → `candidate` → `active` → `stable` → `dep
 
 ---
 
-## 4. Cloudflare Infrastructure
+## 4. AFO UI Belt
+
+> Spec: `shared/specs/afo-ui-belt-v0.1.md`  
+> Belt: `afo-ui-belt`  
+> Purpose: Generate, validate, repair, and assemble functional UI pieces for Cloudflare Workers. MCPs are the factory — not the final page.
+
+### `afo-buttons-mcp`
+- **status:** experimental
+- **worker:** `afo-buttons-mcp` (to be created)
+- **domain:** `buttons.agentfeedoptimization.com/mcp`
+- **protocol:** AFO Mobile MCP Protocol
+- **belt:** `afo-ui-belt`
+- **tools:**
+  - `generate_button(spec)` — returns HTML + JS snippet
+  - `generate_button_group(spec[])` — returns grouped toolbar
+  - `audit_buttons(page_contract)` — returns pass/fail per button
+  - `repair_button(id, issue)` — returns corrected snippet
+- **notes:** First implementation target. Proves code-gen pattern for the belt.
+
+---
+
+### `afo-forms-mcp`
+- **status:** experimental
+- **worker:** `afo-forms-mcp` (to be created)
+- **domain:** `forms.agentfeedoptimization.com/mcp`
+- **protocol:** AFO Mobile MCP Protocol
+- **belt:** `afo-ui-belt`
+- **tools:**
+  - `generate_form(spec)` — HTML + JS
+  - `generate_passcode_panel(spec)` — auth panel HTML + JS
+  - `audit_form(form_id, contract)` — validation report
+  - `repair_form(id, issue)` — corrected snippet
+
+---
+
+### `afo-tables-mcp`
+- **status:** experimental
+- **worker:** `afo-tables-mcp` (to be created)
+- **domain:** `tables.agentfeedoptimization.com/mcp`
+- **protocol:** AFO Mobile MCP Protocol
+- **belt:** `afo-ui-belt`
+- **tools:**
+  - `generate_table(spec)` — HTML + JS
+  - `audit_table(table_id, contract)` — pass/fail report
+  - `repair_table(id, issue)` — corrected snippet
+
+---
+
+### `afo-layout-mcp`
+- **status:** experimental
+- **worker:** `afo-layout-mcp` (to be created)
+- **domain:** `layout.agentfeedoptimization.com/mcp`
+- **protocol:** AFO Mobile MCP Protocol
+- **belt:** `afo-ui-belt`
+- **tools:**
+  - `generate_dashboard_shell(spec)` — HTML + CSS
+  - `generate_tabs(spec)` — tab system HTML + JS
+  - `generate_sidebar(spec)` — sidebar HTML + CSS
+  - `audit_layout(contract)` — structural validation report
+
+---
+
+### `afo-api-binder-mcp`
+- **status:** experimental
+- **worker:** `afo-api-binder-mcp` (to be created)
+- **domain:** `api-binder.agentfeedoptimization.com/mcp`
+- **protocol:** AFO Mobile MCP Protocol
+- **belt:** `afo-ui-belt`
+- **tools:**
+  - `generate_api_binding(endpoint_spec)` — JS fetch wrapper
+  - `audit_bindings(contract)` — endpoint reachability report
+  - `repair_binding(id, issue)` — corrected fetch code
+
+---
+
+### `afo-ui-auditor-mcp`
+- **status:** experimental
+- **worker:** `afo-ui-auditor-mcp` (to be created)
+- **domain:** `ui-auditor.agentfeedoptimization.com/mcp`
+- **protocol:** AFO Mobile MCP Protocol
+- **belt:** `afo-ui-belt`
+- **tools:**
+  - `audit_page(url, contract)` — full audit report
+  - `audit_contract(url)` — contract validation only
+  - `audit_endpoints(url, endpoints)` — endpoint reachability
+  - `audit_buttons(url)` — button handler check
+  - `audit_mobile(url)` — mobile layout check
+- **notes:** May optionally store audit history in `ui_audits` D1 table.
+
+---
+
+### `afo-ui-composer-mcp`
+- **status:** experimental
+- **worker:** `afo-ui-composer-mcp` (to be created)
+- **domain:** `ui-composer.agentfeedoptimization.com/mcp`
+- **protocol:** AFO Mobile MCP Protocol
+- **belt:** `afo-ui-belt`
+- **tools:**
+  - `compose_ui(spec)` — full deployable Worker source
+  - `preview_contract(spec)` — contract only, no code
+  - `validate_spec(spec)` — spec completeness check
+  - `repair_ui(url, audit_report)` — diff + patched source
+- **notes:** Pipeline orchestrator. Depends on all other UI Belt MCPs. Build last. Second priority implementation target after `afo-buttons-mcp`.
+
+---
+
+## 5. Cloudflare Infrastructure
 
 ### `cloudflare-multipart-mcp`
 - **status:** active ✅
@@ -184,7 +297,7 @@ Status stages: `experimental` → `candidate` → `active` → `stable` → `dep
 
 ---
 
-## 5. Protocol / Template Registry
+## 6. Protocol / Template Registry
 
 ### `afo-mobile-mcp-protocol`
 - **status:** stable ✅
@@ -224,7 +337,7 @@ Status stages: `experimental` → `candidate` → `active` → `stable` → `dep
 
 ---
 
-## 6. tool-notes
+## 7. tool-notes
 
 ### `tool-notes` Worker
 - **status:** active ✅ (Phase 1 complete)
@@ -239,21 +352,28 @@ Status stages: `experimental` → `candidate` → `active` → `stable` → `dep
 
 ## Inventory Summary
 
-| Tool / MCP | Status | Worker Exists | Belt |
-|---|---|---|---|
-| `message-os-cloud-social-mcp` | candidate | ❌ | social-builder-belt |
-| `message-os-cloud-admin-mcp` | candidate | ❌ | social-builder-belt |
-| `message-os-cloud-dashboard-builder` | candidate | ❌ | social-builder-belt |
-| `message-os-boot-mcp` | candidate | ❌ | social-builder-belt |
-| `handoff-mcp` | candidate | ❌ | social-builder-belt |
-| `context-belt-mcp` | experimental | ❌ | social-builder-belt |
-| `toolsmith-belt-manager-mcp` | candidate | ❌ | social-builder-belt |
-| `resend-email-mcp` | candidate | ❌ | social-builder-belt |
-| `calcom-booking-mcp` | candidate | ❌ | social-builder-belt |
-| `cloudflare-multipart-mcp` | **active ✅** | ✅ v1.0.1 | cf-worker-builder-belt |
-| `afo-mobile-mcp-protocol` | **stable ✅** | N/A (spec) | mandatory all MCPs |
-| `afo-versioned-mcp-lifecycle` | **active ✅** | N/A (doctrine) | mandatory all MCPs |
-| `tool-notes` Worker | **active ✅** | ✅ Phase 1 | toolsmith |
+| Tool / MCP | Status | Worker Exists | Belt | Widget Support |
+|---|---|---|---|---|
+| `message-os-cloud-social-mcp` | candidate | ❌ | social-builder-belt | ✅ v0.2.0 |
+| `message-os-cloud-admin-mcp` | candidate | ❌ | social-builder-belt | — |
+| `message-os-cloud-dashboard-builder` | candidate | ❌ | social-builder-belt | — |
+| `message-os-boot-mcp` | candidate | ❌ | social-builder-belt | — |
+| `handoff-mcp` | candidate | ❌ | social-builder-belt | — |
+| `context-belt-mcp` | experimental | ❌ | social-builder-belt | — |
+| `toolsmith-belt-manager-mcp` | candidate | ❌ | social-builder-belt | — |
+| `resend-email-mcp` | candidate | ❌ | social-builder-belt | — |
+| `calcom-booking-mcp` | candidate | ❌ | social-builder-belt | — |
+| `afo-buttons-mcp` | experimental | ❌ | afo-ui-belt | — |
+| `afo-forms-mcp` | experimental | ❌ | afo-ui-belt | — |
+| `afo-tables-mcp` | experimental | ❌ | afo-ui-belt | — |
+| `afo-layout-mcp` | experimental | ❌ | afo-ui-belt | — |
+| `afo-api-binder-mcp` | experimental | ❌ | afo-ui-belt | — |
+| `afo-ui-auditor-mcp` | experimental | ❌ | afo-ui-belt | — |
+| `afo-ui-composer-mcp` | experimental | ❌ | afo-ui-belt | — |
+| `cloudflare-multipart-mcp` | **active ✅** | ✅ v1.0.1 | cf-worker-builder-belt | — |
+| `afo-mobile-mcp-protocol` | **stable ✅** | N/A (spec) | mandatory all MCPs | — |
+| `afo-versioned-mcp-lifecycle` | **active ✅** | N/A (doctrine) | mandatory all MCPs | — |
+| `tool-notes` Worker | **active ✅** | ✅ Phase 1 | toolsmith | — |
 
 ---
 
