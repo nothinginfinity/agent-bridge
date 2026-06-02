@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<!--
+  broken-button-page.html
+  Buttons with known issues. Use this to test audit_buttons + repair_button flow.
+
+  Known issues per button:
+  - loadSource:   missing data-loading-label, missing error_target element
+  - copyAll:      missing JS handler entirely
+  - deleteWorker: danger button with no confirm() guard, no admin gate
+  - ghostBtn:     button element missing from DOM entirely
+
+  Expected audit_buttons output:
+    pass: false
+    failed: 4
+    repair_plan: [...]
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AFO Buttons — Broken Example</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 2rem; background: #f7f6f2; color: #28251d; }
+    .btn { padding: 0.5rem 1rem; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
+    .btn-primary   { background: #01696f; color: #fff; }
+    .btn-secondary { background: transparent; border: 1px solid #01696f; color: #01696f; }
+    .btn-copy      { background: transparent; border: 1px solid #dcd9d5; color: #28251d; }
+    .btn-danger    { background: #a12c7b; color: #fff; }
+    pre { background: #201f1d; color: #cdccca; padding: 1rem; border-radius: 8px; font-size: 13px; min-height: 4rem; }
+    section { margin-bottom: 2rem; }
+    h2 { font-size: 1rem; margin-bottom: 0.75rem; }
+    .issue-tag { display: inline-block; background: #a12c7b22; color: #a12c7b; font-size: 11px; padding: 2px 6px; border-radius: 4px; margin-left: 8px; }
+  </style>
+</head>
+<body>
+
+<h1>AFO Buttons — Broken Page</h1>
+<p style="color:#a12c7b;font-size:13px;">⚠ This page contains intentional button failures for audit testing. Do not ship this.</p>
+
+<script>
+  window.__afoState = window.__afoState || {};
+</script>
+
+<!-- ISSUE 1: loadSource — missing data-loading-label, no error_target element -->
+<section>
+  <h2>Load Source <span class="issue-tag">missing_loading_state</span> <span class="issue-tag">error_target_element_missing</span></h2>
+  <!-- BUG: no data-loading-label attribute -->
+  <!-- BUG: no #loadSourceStatus element in page -->
+  <button
+    data-btn-id="loadSource"
+    data-action="fetch"
+    data-endpoint="/api/source/:worker_id"
+    class="btn btn-primary"
+    type="button"
+    aria-label="Load source"
+  >
+    Load source
+  </button>
+  <pre id="sourceOut">Source will appear here.</pre>
+</section>
+
+<!-- ISSUE 2: copyAll — no JS handler at all -->
+<section>
+  <h2>Copy All <span class="issue-tag">missing_handler</span></h2>
+  <!-- BUG: button exists in HTML but has no JS event listener -->
+  <button
+    data-btn-id="copyAll"
+    data-action="copy"
+    data-copy-value="{worker_url}"
+    class="btn btn-copy"
+    type="button"
+    aria-label="Copy all"
+  >
+    Copy all
+  </button>
+</section>
+
+<!-- ISSUE 3: deleteWorker — danger button, no confirm(), no admin gate -->
+<section>
+  <h2>Delete Worker <span class="issue-tag">danger_missing_confirm</span> <span class="issue-tag">missing_admin_guard</span></h2>
+  <!-- BUG: danger variant, no confirm() call in handler -->
+  <!-- BUG: admin_only but not wrapped in data-admin-gate -->
+  <button
+    data-btn-id="deleteWorker"
+    data-action="fetch"
+    data-endpoint="/api/delete/:worker_id"
+    data-loading-label="Deleting…"
+    class="btn btn-danger"
+    type="button"
+    aria-label="Delete worker"
+  >
+    Delete worker
+  </button>
+  <span id="deleteWorkerStatus"></span>
+</section>
+
+<!-- ISSUE 4: ghostBtn — element completely missing from DOM -->
+<!-- BUG: contract declares this button but it is not in the HTML -->
+<!-- <button data-btn-id="ghostBtn" ...> MISSING </button> -->
+
+<section>
+  <h2>Ghost Button <span class="issue-tag">missing_element</span></h2>
+  <p style="color:#7a7974;font-size:13px;">ghostBtn is declared in the contract but not rendered in this page.</p>
+</section>
+
+<!-- ─── Broken Handlers ─── -->
+<script>
+// loadSource — handler exists but is missing error_target write
+(function() {
+  const btn = document.querySelector('[data-btn-id="loadSource"]');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    // BUG: no admin_passcode / worker_id guard
+    const originalLabel = btn.textContent.trim();
+    btn.disabled = true;
+    btn.textContent = 'Loading…'; // loading label set in JS but NOT as data attribute
+    try {
+      const res = await fetch('/api/source/unknown');
+      const text = await res.text();
+      const target = document.getElementById('sourceOut');
+      if (target) target.textContent = text;
+      // BUG: no error_target write — errors are silently swallowed
+    } catch (err) {
+      console.error(err); // silent — no UI error feedback
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
+  });
+})();
+
+// copyAll — NO HANDLER (intentionally omitted to test audit)
+
+// deleteWorker — no confirm(), no admin gate check
+(function() {
+  const btn = document.querySelector('[data-btn-id="deleteWorker"]');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    // BUG: no confirm() call
+    // BUG: no admin_passcode check
+    btn.disabled = true;
+    btn.textContent = 'Deleting…';
+    try {
+      const res = await fetch('/api/delete/unknown', { method: 'DELETE' });
+      const text = await res.text();
+      document.getElementById('deleteWorkerStatus').textContent = text;
+    } catch (err) {
+      document.getElementById('deleteWorkerStatus').textContent = 'Error: ' + err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+})();
+</script>
+
+<!--
+  Contract to use with audit_buttons:
+  {
+    "buttons": [
+      { "id": "loadSource",   "action": "fetch", "variant": "primary",   "requires": ["admin_passcode", "worker_id"], "loading_label": "Loading…",  "success_target": "sourceOut",    "error_target": "loadSourceStatus" },
+      { "id": "copyAll",      "action": "copy",  "variant": "copy",    "requires": [] },
+      { "id": "deleteWorker", "action": "fetch", "variant": "danger",  "requires": ["admin_passcode", "worker_id"], "loading_label": "Deleting…", "success_target": "deleteWorkerStatus", "error_target": "deleteWorkerStatus", "confirm": true, "admin_only": true },
+      { "id": "ghostBtn",     "action": "noop",  "variant": "ghost",   "requires": [] }
+    ]
+  }
+-->
+
+</body>
+</html>

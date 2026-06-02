@@ -1,0 +1,10 @@
+name = "afo-buttons-mcp"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+[vars]
+ENVIRONMENT = "production"
+
+# No D1 binding required — stateless code generator
+# Custom domain set in Cloudflare dashboard:
+#   buttons.agentfeedoptimization.com → afo-buttons-mcp Worker

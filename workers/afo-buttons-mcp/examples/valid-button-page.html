@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<!--
+  valid-button-page.html
+  All buttons in this page should pass afo-buttons-mcp audit_buttons.
+  Use this as a reference for what correct generated output looks like.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AFO Buttons — Valid Example</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 2rem; background: #f7f6f2; color: #28251d; }
+    .btn { padding: 0.5rem 1rem; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-primary   { background: #01696f; color: #fff; }
+    .btn-secondary { background: transparent; border: 1px solid #01696f; color: #01696f; }
+    .btn-ghost     { background: transparent; color: #01696f; }
+    .btn-danger    { background: #a12c7b; color: #fff; }
+    .btn-copy      { background: transparent; border: 1px solid #dcd9d5; color: #28251d; }
+    .btn-group--row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .status { font-size: 13px; color: #7a7974; margin-top: 0.5rem; min-height: 1.25em; }
+    pre { background: #201f1d; color: #cdccca; padding: 1rem; border-radius: 8px; font-size: 13px; white-space: pre-wrap; min-height: 4rem; }
+    section { margin-bottom: 2rem; }
+    h2 { font-size: 1rem; margin-bottom: 0.75rem; }
+  </style>
+</head>
+<body>
+
+<h1>AFO Buttons — Valid Page</h1>
+<p style="color:#7a7974;font-size:13px;">All buttons declared in the UI contract. All should pass audit_buttons.</p>
+
+<!-- State setup -->
+<script>
+  window.__afoState = window.__afoState || {};
+  // Simulate resolved state for demo
+  window.__afoState.admin_passcode = 'demo-passcode';
+  window.__afoState.worker_id = 'my-worker';
+  window.__afoState.worker_url = 'https://my-worker.example.com';
+</script>
+
+<section>
+  <h2>Fetch Button — Load Source</h2>
+  <button
+    data-btn-id="loadSource"
+    data-action="fetch"
+    data-endpoint="/api/source/:worker_id"
+    data-loading-label="Loading…"
+    class="btn btn-primary"
+    type="button"
+    aria-label="Load source"
+  >
+    Load source
+  </button>
+  <div class="status" id="loadSourceStatus"></div>
+  <pre id="sourceOut">Source will appear here.</pre>
+</section>
+
+<section>
+  <h2>Copy Button — Copy Worker URL</h2>
+  <button
+    data-btn-id="copyWorkerUrl"
+    data-action="copy"
+    data-copy-value="{worker_url}"
+    data-success-label="Copied!"
+    data-reset-ms="2000"
+    class="btn btn-copy"
+    type="button"
+    aria-label="Copy URL"
+  >
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+    Copy URL
+  </button>
+  <span class="status" id="copyWorkerUrlStatus"></span>
+</section>
+
+<section>
+  <h2>Button Group — Source Actions</h2>
+  <div class="btn-group btn-group--row" role="group" aria-label="Source Actions">
+    <button
+      data-btn-id="refresh"
+      data-action="fetch"
+      data-endpoint="/api/url-index"
+      data-loading-label="Refreshing…"
+      class="btn btn-secondary"
+      type="button"
+      aria-label="Refresh"
+    >
+      Refresh
+    </button>
+    <button
+      data-btn-id="copyAll"
+      data-action="copy"
+      data-copy-value="{worker_url}"
+      data-success-label="All copied!"
+      data-reset-ms="2000"
+      class="btn btn-copy"
+      type="button"
+      aria-label="Copy all"
+    >
+      Copy all
+    </button>
+  </div>
+  <div class="status" id="refreshStatus"></div>
+  <pre id="refreshOut">Data will appear here.</pre>
+</section>
+
+<section>
+  <h2>Admin Button (hidden until passcode resolves)</h2>
+  <div data-admin-gate="deleteWorker" hidden>
+    <button
+      data-btn-id="deleteWorker"
+      data-action="fetch"
+      data-endpoint="/api/delete/:worker_id"
+      data-loading-label="Deleting…"
+      class="btn btn-danger"
+      type="button"
+      aria-label="Delete worker"
+    >
+      Delete worker
+    </button>
+  </div>
+  <span class="status" id="deleteWorkerStatus"></span>
+</section>
+
+<!-- ─── Handlers ─── -->
+<script>
+// loadSource handler
+(function() {
+  const btn = document.querySelector('[data-btn-id="loadSource"]');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const admin_passcode = window.__afoState?.admin_passcode;
+    const worker_id = window.__afoState?.worker_id;
+    if (!admin_passcode || !worker_id) return;
+    const originalLabel = btn.textContent.trim();
+    btn.disabled = true;
+    btn.textContent = 'Loading…';
+    try {
+      const res = await fetch(`/api/source/${worker_id}`, { method: 'GET', headers: { 'X-Admin-Passcode': admin_passcode } });
+      const text = await res.text();
+      const target = document.getElementById('sourceOut');
+      if (target) target.textContent = text;
+    } catch (err) {
+      const errTarget = document.getElementById('loadSourceStatus');
+      if (errTarget) errTarget.textContent = 'Error: ' + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
+  });
+})();
+
+// copyWorkerUrl handler
+(function() {
+  const btn = document.querySelector('[data-btn-id="copyWorkerUrl"]');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const raw = '{worker_url}'.replace(/\{(\w+)\}/g, (_, k) => window.__afoState?.[k] ?? '');
+    try {
+      await navigator.clipboard.writeText(raw);
+      const t = document.getElementById('copyWorkerUrlStatus'); if (t) t.textContent = 'Copied!';
+      const orig = btn.textContent.trim();
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = orig; }, 2000);
+    } catch (e) { console.error('Copy failed', e); }
+  });
+})();
+
+// refresh handler
+(function() {
+  const btn = document.querySelector('[data-btn-id="refresh"]');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const originalLabel = btn.textContent.trim();
+    btn.disabled = true;
+    btn.textContent = 'Refreshing…';
+    try {
+      const res = await fetch('/api/url-index', { method: 'GET', headers: { 'X-Admin-Passcode': window.__afoState?.admin_passcode ?? '' } });
+      const text = await res.text();
+      const target = document.getElementById('refreshOut');
+      if (target) target.textContent = text;
+    } catch (err) {
+      const errTarget = document.getElementById('refreshStatus');
+      if (errTarget) errTarget.textContent = 'Error: ' + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
+  });
+})();
+
+// copyAll handler
+(function() {
+  const btn = document.querySelector('[data-btn-id="copyAll"]');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const raw = '{worker_url}'.replace(/\{(\w+)\}/g, (_, k) => window.__afoState?.[k] ?? '');
+    try {
+      await navigator.clipboard.writeText(raw);
+      const orig = btn.textContent.trim();
+      btn.textContent = 'All copied!';
+      setTimeout(() => { btn.textContent = orig; }, 2000);
+    } catch (e) { console.error('Copy failed', e); }
+  });
+})();
+
+// deleteWorker handler
+(function() {
+  const btn = document.querySelector('[data-btn-id="deleteWorker"]');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const admin_passcode = window.__afoState?.admin_passcode;
+    const worker_id = window.__afoState?.worker_id;
+    if (!admin_passcode || !worker_id) return;
+    if (!confirm('Are you sure?')) return;
+    const originalLabel = btn.textContent.trim();
+    btn.disabled = true;
+    btn.textContent = 'Deleting…';
+    try {
+      const res = await fetch(`/api/delete/${worker_id}`, { method: 'DELETE', headers: { 'X-Admin-Passcode': admin_passcode } });
+      const text = await res.text();
+      const target = document.getElementById('deleteWorkerStatus');
+      if (target) target.textContent = text;
+    } catch (err) {
+      const errTarget = document.getElementById('deleteWorkerStatus');
+      if (errTarget) errTarget.textContent = 'Error: ' + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
+  });
+})();
+
+// Admin gate — reveal deleteWorker on passcode resolved
+(function() {
+  document.addEventListener('afo:passcode-resolved', function() {
+    const gate = document.querySelector('[data-admin-gate="deleteWorker"]');
+    if (gate) gate.removeAttribute('hidden');
+  });
+  // Fire for demo
+  document.dispatchEvent(new CustomEvent('afo:passcode-resolved'));
+})();
+</script>
+
+</body>
+</html>

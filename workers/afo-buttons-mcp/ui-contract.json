@@ -1,0 +1,22 @@
+{
+  "worker": "afo-buttons-mcp",
+  "version": "0.1.0",
+  "type": "mcp-factory",
+  "belt": "afo-ui-belt",
+  "description": "Button system generator + auditor. Generates HTML+JS snippets. Does not serve a UI directly.",
+  "endpoints": [
+    { "path": "/health",  "method": "GET",  "description": "Health check" },
+    { "path": "/mcp",    "method": "POST", "description": "MCP JSON-RPC 2.0" }
+  ],
+  "tools": [
+    { "name": "generate_button",        "action": "code-gen",   "output": "html+js" },
+    { "name": "generate_button_group",  "action": "code-gen",   "output": "html+js" },
+    { "name": "generate_copy_button",   "action": "code-gen",   "output": "html+js" },
+    { "name": "generate_admin_button",  "action": "code-gen",   "output": "html+js" },
+    { "name": "audit_buttons",          "action": "audit",      "output": "audit-report" },
+    { "name": "repair_button",          "action": "repair",     "output": "html+js" }
+  ],
+  "states": ["ready"],
+  "bindings": [],
+  "notes": "Stateless. No D1. No KV. No secrets required."
+}
