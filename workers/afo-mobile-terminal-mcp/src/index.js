@@ -1,16 +1,15 @@
-// afo-mobile-terminal-mcp v0.2.0
+// afo-mobile-terminal-mcp v0.2.1
 // Command-center layer above individual MCP tools.
 // Orchestrates: deploy, smoke test, registry, handoff, Cloudflare inventory.
 // All write actions are preview-first and confirmation-gated.
 // Never expose secret values in UI, logs, receipts, or /health output.
 //
 // v0.2.0 — /cmd GET slash-command layer
-//   GET /cmd            → help JSON listing all commands + examples
-//   GET /cmd/help       → same
-//   GET /cmd/{tool}?... → run read/preview tools directly from browser/curl
-//   Write tools via GET /cmd always return confirmation_required (no writes)
+// v0.2.1 — fix: unwrap safePost envelope in proxyToDeployMcp so callers
+//           receive the inner tool result JSON, not the fetch wrapper.
+//           Fixes /cmd/deploy_worker preview returning 404/empty result.
 
-const VERSION = "0.2.0";
+const VERSION = "0.2.1";
 const WORKER_NAME = "afo-mobile-terminal-mcp";
 
 const TOOL_NAMES = [
@@ -67,11 +66,6 @@ export default {
 
 // ─── /cmd handler ─────────────────────────────────────────────────────────────
 
-/**
- * Handle GET /cmd/{tool_name}?param=value&...
- * - Read/preview tools: run immediately and return JSON result.
- * - Write tools: always return confirmation_required (no writes via GET).
- */
 async function handleCmd(url, env) {
   const toolName = url.pathname.replace(/^\/cmd\//, "").split("/")[0];
 
@@ -89,38 +83,55 @@ async function handleCmd(url, env) {
   // Parse query params into args object
   const args = {};
   for (const [k, v] of url.searchParams.entries()) {
-    // Coerce "true"/"false" strings to booleans
-    if (v === "true")  args[k] = true;
+    if (v === "true")       args[k] = true;
     else if (v === "false") args[k] = false;
-    else args[k] = v;
+    else                    args[k] = v;
   }
 
   // Write tools via GET → always return confirmation_required, never execute
   if (WRITE_TOOLS.has(toolName)) {
-    // For deploy_worker, return preview/dry-run automatically
     if (toolName === "deploy_worker") {
+      // Run the preview directly (no writes) and embed it
       const preview = await previewWorkerDeploy(args, env);
       return {
         ok: false,
         error: "confirmation_required",
         via: "GET /cmd — writes disabled via GET",
         message: "GET /cmd route returns preview only. To deploy, POST to /mcp with confirmed:true.",
-        post_example: { url: `${url.origin}/mcp`, method: "POST", body: { method: "tools/call", params: { name: "deploy_worker", arguments: { ...args, confirmed: true } } } },
+        post_example: {
+          url: `${url.origin}/mcp`,
+          method: "POST",
+          body: {
+            method: "tools/call",
+            params: { name: "deploy_worker", arguments: { ...args, confirmed: true } }
+          }
+        },
         preview
       };
     }
-    // For register_worker / write_handoff → return preview payload
-    const previewResult = toolName === "register_worker"
-      ? { ok: false, error: "confirmation_required", via: "GET /cmd", message: "POST to /mcp with confirmed:true to register.", preview: buildRegistrationPayload(args, env) }
-      : { ok: false, error: "confirmation_required", via: "GET /cmd", message: "POST to /mcp with confirmed:true to write handoff.", preview: buildHandoffNote(args) };
-    return previewResult;
+    if (toolName === "register_worker") {
+      return {
+        ok: false,
+        error: "confirmation_required",
+        via: "GET /cmd",
+        message: "POST to /mcp with confirmed:true to register.",
+        preview: buildRegistrationPayload(args, env)
+      };
+    }
+    // write_handoff
+    return {
+      ok: false,
+      error: "confirmation_required",
+      via: "GET /cmd",
+      message: "POST to /mcp with confirmed:true to write handoff.",
+      preview: buildHandoffNote(args)
+    };
   }
 
   // Read / preview tools → run directly
   return dispatch(toolName, args, env);
 }
 
-/** Build the /cmd help payload */
 function cmdHelp(origin) {
   const examples = [
     { cmd: `GET ${origin}/cmd/list_command_belts`, description: "List all configured command belts + status" },
@@ -130,7 +141,7 @@ function cmdHelp(origin) {
     { cmd: `GET ${origin}/cmd/preview_worker_deploy?repo=nothinginfinity/agent-bridge&branch=main&worker_path=workers/afo-buttons-mcp&script_name=afo-buttons-mcp`, description: "Preview a deploy (no writes)" },
     { cmd: `GET ${origin}/cmd/run_smoke_test?script_name=afo-buttons-mcp`, description: "Smoke test a live worker" },
     { cmd: `GET ${origin}/cmd/list_recent_deploys?repo=nothinginfinity/agent-bridge&script_name=afo-buttons-mcp`, description: "List recent deploy receipts" },
-    { cmd: `GET ${origin}/cmd/deploy_worker?repo=nothinginfinity/agent-bridge&worker_path=workers/afo-buttons-mcp&script_name=afo-buttons-mcp`, description: "[READ-ONLY via GET] Returns deploy preview + instructions to confirm via POST /mcp" },
+    { cmd: `GET ${origin}/cmd/deploy_worker?repo=nothinginfinity/agent-bridge&branch=main&worker_path=workers/afo-buttons-mcp&script_name=afo-buttons-mcp`, description: "[READ-ONLY via GET] Returns valid deploy preview + confirm instructions" },
     { cmd: `GET ${origin}/cmd/register_worker?script_name=afo-buttons-mcp&description=AFO+buttons+MCP`, description: "[READ-ONLY via GET] Returns registration preview + instructions" },
     { cmd: `GET ${origin}/cmd/write_handoff?title=Handoff+title&to=alice&body=Work+done`, description: "[READ-ONLY via GET] Returns handoff preview + instructions" }
   ];
@@ -141,10 +152,10 @@ function cmdHelp(origin) {
     version: VERSION,
     description: "GET /cmd slash-command layer. Read and preview tools run immediately. Write tools return a preview and instructions to confirm via POST /mcp.",
     routes: {
-      help:   `GET ${origin}/cmd`,
-      run:    `GET ${origin}/cmd/{tool_name}?param=value`,
-      tools:  `GET ${origin}/tools/list`,
-      mcp:    `POST ${origin}/mcp  (canonical agent endpoint)`
+      help:  `GET ${origin}/cmd`,
+      run:   `GET ${origin}/cmd/{tool_name}?param=value`,
+      tools: `GET ${origin}/tools/list`,
+      mcp:   `POST ${origin}/mcp  (canonical agent endpoint)`
     },
     safety: {
       read_tools:    TOOL_NAMES.filter(n => !WRITE_TOOLS.has(n)),
@@ -189,11 +200,11 @@ async function dispatch(name, args, env) {
 async function listCommandBelts(args, env) {
   const deployMcpUrl = env.DEPLOY_MCP_URL || "https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev";
   const belts = [
-    { name: "afo-mobile-deploy-mcp",     url: deployMcpUrl, status: await pingHealth(deployMcpUrl), role: "deploy" },
-    { name: "afo-mobile-terminal-mcp",   url: env.TERMINAL_SELF_URL || "https://afo-mobile-terminal-mcp.jaredtechfit.workers.dev", status: "self", role: "command-center" },
-    { name: "registry",                  url: env.REGISTRY_URL || null, status: env.REGISTRY_URL ? await pingHealth(env.REGISTRY_URL) : "not_configured", role: "registry" },
-    { name: "handoff-mcp",               url: env.HANDOFF_MCP_URL || null, status: env.HANDOFF_MCP_URL ? await pingHealth(env.HANDOFF_MCP_URL) : "not_configured", role: "handoff" },
-    { name: "cf-gateway",                url: env.CF_GATEWAY_URL || null, status: env.CF_GATEWAY_URL ? await pingHealth(env.CF_GATEWAY_URL) : "not_configured", role: "cloudflare_infra" }
+    { name: "afo-mobile-deploy-mcp",   url: deployMcpUrl, status: await pingHealth(deployMcpUrl), role: "deploy" },
+    { name: "afo-mobile-terminal-mcp", url: env.TERMINAL_SELF_URL || "https://afo-mobile-terminal-mcp.jaredtechfit.workers.dev", status: "self", role: "command-center" },
+    { name: "registry",                url: env.REGISTRY_URL || null, status: env.REGISTRY_URL ? await pingHealth(env.REGISTRY_URL) : "not_configured", role: "registry" },
+    { name: "handoff-mcp",             url: env.HANDOFF_MCP_URL || null, status: env.HANDOFF_MCP_URL ? await pingHealth(env.HANDOFF_MCP_URL) : "not_configured", role: "handoff" },
+    { name: "cf-gateway",              url: env.CF_GATEWAY_URL || null, status: env.CF_GATEWAY_URL ? await pingHealth(env.CF_GATEWAY_URL) : "not_configured", role: "cloudflare_infra" }
   ];
   return { ok: true, belts };
 }
@@ -201,7 +212,7 @@ async function listCommandBelts(args, env) {
 async function listRegisteredWorkers(args, env) {
   if (env.REGISTRY_URL) {
     const res = await safePost(`${trimSlash(env.REGISTRY_URL)}/mcp`, { method: "tools/call", params: { name: "list_workers", arguments: args } });
-    if (res.ok) return { ok: true, source: "registry", workers: res.result?.workers || res.result || [] };
+    if (res.http_ok) return { ok: true, source: "registry", workers: res.result?.workers || res.result || [] };
   }
   const repo = args.repo || "nothinginfinity/agent-bridge";
   const path = args.deployments_path || "shared/deployments";
@@ -226,16 +237,20 @@ async function openWorkerUrls(args, env) {
 }
 
 async function validateWorker(args, env) {
+  // deploy-mcp tool name: validate_worker_folder
   return proxyToDeployMcp("validate_worker_folder", args, env);
 }
 
 async function previewWorkerDeploy(args, env) {
-  const validation = await proxyToDeployMcp("preview_worker_from_github", args, env);
+  // deploy-mcp tool name: preview_worker_from_github
+  const result = await proxyToDeployMcp("preview_worker_from_github", args, env);
+  // proxyToDeployMcp now returns the unwrapped tool result directly.
+  // Wrap with our own mode/note for clarity.
   return {
-    ok: validation.ok,
+    ok: result.ok,
     mode: "preview",
     note: "No changes written to Cloudflare. Call deploy_worker with confirmed:true to proceed.",
-    preview: validation
+    result
   };
 }
 
@@ -249,14 +264,17 @@ async function deployWorker(args, env) {
       preview
     };
   }
+  // deploy-mcp tool name: deploy_worker_from_github
   return proxyToDeployMcp("deploy_worker_from_github", args, env);
 }
 
 async function runSmokeTest(args, env) {
+  // deploy-mcp tool name: run_worker_smoke_test
   return proxyToDeployMcp("run_worker_smoke_test", args, env);
 }
 
 async function listRecentDeploys(args, env) {
+  // deploy-mcp tool name: list_recent_deploys
   return proxyToDeployMcp("list_recent_deploys", args, env);
 }
 
@@ -272,7 +290,7 @@ async function registerWorker(args, env) {
   const payload = buildRegistrationPayload(args, env);
   if (env.REGISTRY_URL) {
     const res = await safePost(`${trimSlash(env.REGISTRY_URL)}/mcp`, { method: "tools/call", params: { name: "upsert_worker", arguments: payload } });
-    if (res.ok) return { ok: true, source: "registry", result: res.result, payload };
+    if (res.http_ok) return { ok: true, source: "registry", result: res.result, payload };
   }
   const repo = args.repo || "nothinginfinity/agent-bridge";
   const branch = args.branch || "main";
@@ -297,7 +315,7 @@ async function writeHandoff(args, env) {
   const note = buildHandoffNote(args);
   if (env.HANDOFF_MCP_URL) {
     const res = await safePost(`${trimSlash(env.HANDOFF_MCP_URL)}/mcp`, { method: "tools/call", params: { name: "write_handoff", arguments: note } });
-    if (res.ok) return { ok: true, source: "handoff-mcp", result: res.result };
+    if (res.http_ok) return { ok: true, source: "handoff-mcp", result: res.result };
   }
   const repo = args.repo || "nothinginfinity/agent-bridge";
   const branch = args.branch || "main";
@@ -312,13 +330,45 @@ async function writeHandoff(args, env) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Proxy a tool call to afo-mobile-deploy-mcp and return the UNWRAPPED
+ * tool result (the JSON the deploy-mcp returned), not the fetch envelope.
+ *
+ * The fetch envelope { ok, status, result } is kept internally; callers
+ * only see the inner result so ok/error fields are accurate.
+ */
 async function proxyToDeployMcp(toolName, args, env) {
   const base = trimSlash(env.DEPLOY_MCP_URL || "https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev");
-  const res = await safePost(`${base}/mcp`, {
+  const envelope = await safePost(`${base}/mcp`, {
     method: "tools/call",
     params: { name: toolName, arguments: args }
   });
-  return res;
+
+  // Transport / network error — safePost sets http_ok:false and error string
+  if (!envelope.http_ok) {
+    return {
+      ok: false,
+      error: "deploy_mcp_unreachable",
+      deploy_mcp_url: base,
+      tool: toolName,
+      detail: envelope.error || `HTTP ${envelope.status}`
+    };
+  }
+
+  // deploy-mcp returned a non-200 HTTP status
+  if (envelope.status >= 400) {
+    return {
+      ok: false,
+      error: "deploy_mcp_http_error",
+      deploy_mcp_url: base,
+      tool: toolName,
+      http_status: envelope.status,
+      result: envelope.result
+    };
+  }
+
+  // Unwrap: return the actual tool result JSON
+  return envelope.result;
 }
 
 function buildRegistrationPayload(args, env) {
@@ -326,17 +376,17 @@ function buildRegistrationPayload(args, env) {
   const scriptName = args.script_name || "unknown-worker";
   const base = args.custom_domain ? `https://${args.custom_domain}` : `https://${scriptName}.${subdomain}.workers.dev`;
   return {
-    script_name:  scriptName,
-    display_name: args.display_name || scriptName,
-    description:  args.description || "",
-    repo:         args.repo || "nothinginfinity/agent-bridge",
-    worker_path:  args.worker_path || `workers/${scriptName}`,
-    base_url:     base,
-    health_url:   args.health_url || `${base}/health`,
-    mcp_url:      args.mcp_url    || `${base}/mcp`,
-    llms_url:     `${base}/llms.txt`,
-    tools_url:    `${base}/tools/list`,
-    tags:         args.tags || [],
+    script_name:   scriptName,
+    display_name:  args.display_name || scriptName,
+    description:   args.description  || "",
+    repo:          args.repo         || "nothinginfinity/agent-bridge",
+    worker_path:   args.worker_path  || `workers/${scriptName}`,
+    base_url:      base,
+    health_url:    args.health_url   || `${base}/health`,
+    mcp_url:       args.mcp_url      || `${base}/mcp`,
+    llms_url:      `${base}/llms.txt`,
+    tools_url:     `${base}/tools/list`,
+    tags:          args.tags         || [],
     registered_at: new Date().toISOString(),
     registered_by: WORKER_NAME
   };
@@ -344,13 +394,13 @@ function buildRegistrationPayload(args, env) {
 
 function buildHandoffNote(args) {
   return {
-    title:      args.title  || "Untitled Handoff",
-    from:       args.from   || WORKER_NAME,
-    to:         args.to     || "all",
-    project:    args.project || "",
-    type:       args.type   || "handoff",
-    status:     args.status || "",
-    body:       args.body   || args.message || "",
+    title:      args.title      || "Untitled Handoff",
+    from:       args.from       || WORKER_NAME,
+    to:         args.to         || "all",
+    project:    args.project    || "",
+    type:       args.type       || "handoff",
+    status:     args.status     || "",
+    body:       args.body       || args.message || "",
     next_steps: args.next_steps || [],
     created_at: new Date().toISOString()
   };
@@ -375,6 +425,12 @@ async function httpOk(url) {
   try { const r = await fetch(url, { signal: AbortSignal.timeout(5000) }); return r.ok; } catch { return false; }
 }
 
+/**
+ * safePost — returns { http_ok, status, result } envelope.
+ * http_ok = true means the HTTP request itself succeeded (2xx).
+ * result  = parsed JSON body from the server.
+ * Callers must unwrap result themselves (see proxyToDeployMcp).
+ */
 async function safePost(url, body) {
   try {
     const r = await fetch(url, {
@@ -384,8 +440,10 @@ async function safePost(url, body) {
       signal: AbortSignal.timeout(30000)
     });
     const json = await r.json().catch(() => ({}));
-    return { ok: r.ok, status: r.status, result: json };
-  } catch (err) { return { ok: false, error: String(err?.message || err) }; }
+    return { http_ok: r.ok, status: r.status, result: json };
+  } catch (err) {
+    return { http_ok: false, status: 0, error: String(err?.message || err), result: {} };
+  }
 }
 
 async function githubListContent(env, owner, repo, path, ref) {
@@ -428,7 +486,6 @@ function parseRepo(repo)   { const [owner, name] = String(repo || "").split("/")
 function cleanPath(p)      { return String(p || "").replace(/^\/+|\/+$/g, "").replace(/\/+/g, "/"); }
 function trimSlash(s)      { return String(s || "").replace(/\/+$/g, ""); }
 function encodePath(path)  { return cleanPath(path).split("/").map(encodeURIComponent).join("/"); }
-function decodeBase64(s)   { const bin = atob(String(s).replace(/\s/g, "")); return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))); }
 function encodeBase64(s)   { let bin = ""; for (const b of new TextEncoder().encode(s)) bin += String.fromCharCode(b); return btoa(bin); }
 async function safeJson(res) { const txt = await res.text(); try { return JSON.parse(txt); } catch { return { raw: txt }; } }
 
@@ -465,7 +522,13 @@ function healthPayload(env) {
 }
 
 function toolsList() {
-  return TOOL_NAMES.map(name => ({ name, description: DESCRIPTIONS[name], input_schema: { type: "object" }, via_get: !WRITE_TOOLS.has(name), write_requires_confirm: WRITE_TOOLS.has(name) }));
+  return TOOL_NAMES.map(name => ({
+    name,
+    description: DESCRIPTIONS[name],
+    input_schema: { type: "object" },
+    via_get: !WRITE_TOOLS.has(name),
+    write_requires_confirm: WRITE_TOOLS.has(name)
+  }));
 }
 
 const DESCRIPTIONS = {
@@ -490,15 +553,15 @@ function uiContract() {
     name: WORKER_NAME,
     version: VERSION,
     cards: [
-      { id: "deploy_worker",       label: "Deploy Worker",       tool: "deploy_worker",         inputs: ["repo","branch","worker_path","script_name"], confirm_required: true },
-      { id: "smoke_test",          label: "Smoke Test Worker",   tool: "run_smoke_test",         inputs: ["script_name","smoke_paths"] },
-      { id: "list_recent_deploys", label: "List Recent Deploys", tool: "list_recent_deploys",    inputs: ["repo","script_name"] },
-      { id: "register_worker",     label: "Register Worker",     tool: "register_worker",        inputs: ["script_name","description","tags"], confirm_required: true },
-      { id: "open_urls",           label: "Open Tool URLs",      tool: "open_worker_urls",       inputs: ["script_name","custom_domain"] },
-      { id: "write_handoff",       label: "Write Handoff",       tool: "write_handoff",          inputs: ["title","from","to","project","body","next_steps"], confirm_required: true }
+      { id: "deploy_worker",       label: "Deploy Worker",       tool: "deploy_worker",      inputs: ["repo","branch","worker_path","script_name"], confirm_required: true },
+      { id: "smoke_test",          label: "Smoke Test Worker",   tool: "run_smoke_test",     inputs: ["script_name","smoke_paths"] },
+      { id: "list_recent_deploys", label: "List Recent Deploys", tool: "list_recent_deploys",inputs: ["repo","script_name"] },
+      { id: "register_worker",     label: "Register Worker",     tool: "register_worker",    inputs: ["script_name","description","tags"], confirm_required: true },
+      { id: "open_urls",           label: "Open Tool URLs",      tool: "open_worker_urls",   inputs: ["script_name","custom_domain"] },
+      { id: "write_handoff",       label: "Write Handoff",       tool: "write_handoff",      inputs: ["title","from","to","project","body","next_steps"], confirm_required: true }
     ],
     cmd_layer: {
-      help: `${origin || "https://afo-mobile-terminal-mcp.jaredtechfit.workers.dev"}/cmd`,
+      help:    "https://afo-mobile-terminal-mcp.jaredtechfit.workers.dev/cmd",
       pattern: "/cmd/{tool_name}?param=value",
       write_tools_blocked_via_get: [...WRITE_TOOLS]
     }
