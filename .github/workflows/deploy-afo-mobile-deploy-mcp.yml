@@ -1,0 +1,92 @@
+name: Deploy afo-mobile-deploy-mcp
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'workers/afo-mobile-deploy-mcp/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare Workers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: workers/afo-mobile-deploy-mcp
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: workers/afo-mobile-deploy-mcp/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Deploy via Wrangler
+        run: npm run deploy
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Verify /health
+        run: |
+          echo "Waiting 5s for Worker to propagate..."
+          sleep 5
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/health)
+          echo "/health → HTTP $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "❌ /health did not return 200"
+            exit 1
+          fi
+          echo "✅ /health OK"
+
+      - name: Verify /llms.txt
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/llms.txt)
+          echo "/llms.txt → HTTP $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "❌ /llms.txt did not return 200"
+            exit 1
+          fi
+          echo "✅ /llms.txt OK"
+
+      - name: Verify /tools/list
+        run: |
+          RESPONSE=$(curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+            https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/mcp)
+          echo "/tools/list response: $RESPONSE"
+          if echo "$RESPONSE" | grep -q '"tools"'; then
+            echo "✅ /tools/list returned tools array"
+          else
+            echo "❌ /tools/list did not return expected tools array"
+            exit 1
+          fi
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "## ✅ afo-mobile-deploy-mcp deployed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Route | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| [/health](https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/health) | ✅ 200 |" >> $GITHUB_STEP_SUMMARY
+          echo "| [/llms.txt](https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/llms.txt) | ✅ 200 |" >> $GITHUB_STEP_SUMMARY
+          echo "| [/tools/list](https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/mcp) | ✅ tools array |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ⚠️ Runtime secrets still needed" >> $GITHUB_STEP_SUMMARY
+          echo "Set these in the Cloudflare dashboard under **Workers → afo-mobile-deploy-mcp → Settings → Variables**:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`GITHUB_TOKEN\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`CF_ACCOUNT_ID\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`CF_API_TOKEN\`" >> $GITHUB_STEP_SUMMARY
