@@ -1,13 +1,14 @@
 /**
- * afo-buttons-mcp v0.1.0
+ * afo-buttons-mcp v0.1.1
  * AFO UI Belt — Button System Generator + Auditor
  * Protocol: AFO Mobile MCP Protocol (hand-rolled JSON-RPC 2.0)
- * Route: POST /mcp, GET /health
+ * Routes: GET /, GET /health, GET /llms.txt, GET /tools/list, POST /mcp
  * No bindings. No npm. No build step.
  */
 
-const VERSION = '0.1.0';
+const VERSION = '0.1.1';
 const WORKER_NAME = 'afo-buttons-mcp';
+const WORKER_URL = 'https://afo-buttons-mcp.jaredtechfit.workers.dev';
 
 // ─── Entry Point ───────────────────────────────────────────────────────────────
 
@@ -17,11 +18,26 @@ export default {
     const method = request.method;
 
     // CORS preflight
-    if (method === 'OPTIONS') return corsResponse(204, null);
+    if (method === 'OPTIONS') return corsResponse(204);
+
+    // GET /
+    if (method === 'GET' && url.pathname === '/') {
+      return htmlResponse(rootPage());
+    }
 
     // GET /health
     if (method === 'GET' && url.pathname === '/health') {
       return jsonResponse({ ok: true, worker: WORKER_NAME, version: VERSION });
+    }
+
+    // GET /llms.txt
+    if (method === 'GET' && url.pathname === '/llms.txt') {
+      return textResponse(llmsTxt());
+    }
+
+    // GET /tools/list  (HTTP convenience — mirrors tools/list JSON-RPC result)
+    if (method === 'GET' && url.pathname === '/tools/list') {
+      return jsonResponse({ tools: TOOLS_LIST });
     }
 
     // POST /mcp
@@ -32,6 +48,84 @@ export default {
     return jsonResponse({ error: 'Not found' }, 404);
   }
 };
+
+// ─── Static Pages ──────────────────────────────────────────────────────────────
+
+function rootPage() {
+  const toolRows = TOOLS_LIST.map(t =>
+    `<tr><td><code>${t.name}</code></td><td>${t.description}</td></tr>`
+  ).join('\n');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${WORKER_NAME} v${VERSION}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+    h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+    .badge { display: inline-block; background: #e8f5e9; color: #2e7d32; border-radius: 4px; padding: 2px 8px; font-size: 0.75rem; font-family: monospace; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th { text-align: left; border-bottom: 2px solid #e0e0e0; padding: 6px 8px; font-size: 0.8rem; color: #555; }
+    td { padding: 6px 8px; border-bottom: 1px solid #f0f0f0; font-size: 0.875rem; }
+    td code { background: #f5f5f5; border-radius: 3px; padding: 1px 5px; }
+    .routes { margin-top: 1.5rem; }
+    .routes li { margin: 0.3rem 0; font-family: monospace; font-size: 0.875rem; }
+  </style>
+</head>
+<body>
+  <h1>${WORKER_NAME} <span class="badge">v${VERSION}</span></h1>
+  <p>AFO UI Belt — Button system generator, auditor, and repair tool.</p>
+
+  <div class="routes">
+    <strong>Routes</strong>
+    <ul>
+      <li>GET  /</li>
+      <li>GET  /health</li>
+      <li>GET  /llms.txt</li>
+      <li>GET  /tools/list</li>
+      <li>POST /mcp  (JSON-RPC 2.0)</li>
+    </ul>
+  </div>
+
+  <strong>Tools</strong>
+  <table>
+    <thead><tr><th>Name</th><th>Description</th></tr></thead>
+    <tbody>${toolRows}</tbody>
+  </table>
+</body>
+</html>`;
+}
+
+function llmsTxt() {
+  const toolLines = TOOLS_LIST.map(t => `- ${t.name}: ${t.description}`).join('\n');
+  return `# ${WORKER_NAME} v${VERSION}
+
+> AFO UI Belt — Button system generator, auditor, and repair tool.
+> Protocol: JSON-RPC 2.0 via POST /mcp
+> Base URL: ${WORKER_URL}
+
+## Routes
+
+- GET  /           Human-readable index page
+- GET  /health     Liveness check → { ok, worker, version }
+- GET  /llms.txt   This file
+- GET  /tools/list Tools array (JSON)
+- POST /mcp        JSON-RPC 2.0 endpoint
+
+## Tools
+
+${toolLines}
+
+## Usage
+
+POST ${WORKER_URL}/mcp
+Content-Type: application/json
+
+{ "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {} }
+`;
+}
 
 // ─── MCP Handler ───────────────────────────────────────────────────────────────
 
@@ -297,14 +391,13 @@ function generateAdminButton(args) {
     confirm: args.confirm ?? true,
     admin_only: true,
     requires: ['admin_passcode'],
-    loading_label: args.loading_label ?? 'Working…',
+    loading_label: args.loading_label ?? 'Working\u2026',
     success_target: args.success_target,
     error_target: args.error_target
   };
 
   const base = generateButton(spec);
 
-  // Wrap HTML with admin guard — hidden by default, shown when passcode resolves
   const html = `<div data-admin-gate="${escapeAttr(args.id)}" hidden>
   ${base.html}
 </div>
@@ -367,43 +460,34 @@ function auditOneButton(spec, src) {
 
   const issues = [];
 
-  // exists: data-btn-id present in HTML
   const exists = src.includes(`data-btn-id="${id}"`);
   if (!exists) issues.push('missing_element');
 
-  // has_handler: JS event listener referencing this button's data-btn-id
   const hasHandler = src.includes(`data-btn-id="${id}"`) &&
     (src.includes(`[data-btn-id="${id}"]`) || src.includes(`data-btn-id=\\"${id}\\"`));
   if (!hasHandler && exists) issues.push('missing_handler');
 
-  // has_loading: data-loading-label present (fetch only)
   const hasLoading = !isFetch || src.includes(`data-btn-id="${id}"`) && src.includes('data-loading-label');
   if (!hasLoading && isFetch) issues.push('missing_loading_state');
 
-  // has_requires_guard: all requires vars referenced in JS near this button
   const hasRequiresGuard = requires.length === 0 ||
     requires.every(v => src.includes(`__afoState?.${v}`) || src.includes(`__afoState['${v}']`) || src.includes(`__afoState["${v}"]`));
   if (!hasRequiresGuard) issues.push('missing_requires_guard');
 
-  // has_success_target: success_target id referenced in JS
   const successTarget = spec.success_target;
   const hasSuccessTarget = !successTarget || src.includes(`getElementById('${successTarget}')`) || src.includes(`getElementById("${successTarget}"`);
   if (!hasSuccessTarget) issues.push('missing_success_target');
 
-  // has_error_target: error_target id referenced
   const errorTarget = spec.error_target;
   const hasErrorTarget = !errorTarget || src.includes(`getElementById('${errorTarget}')`) || src.includes(`getElementById("${errorTarget}"`);
   if (!hasErrorTarget && isFetch) issues.push('missing_error_target');
 
-  // danger_has_confirm: confirm() call present for danger variant
   const dangerHasConfirm = !isDanger || src.includes('confirm(');
   if (!dangerHasConfirm) issues.push('danger_missing_confirm');
 
-  // admin_has_guard: hidden attribute or afo:passcode-resolved event present
   const adminHasGuard = !isAdmin || src.includes('afo:passcode-resolved') || src.includes('data-admin-gate');
   if (!adminHasGuard) issues.push('missing_admin_guard');
 
-  // target_exists: success/error target DOM elements present in source
   const successTargetExists = !successTarget || src.includes(`id="${successTarget}"`) || src.includes(`id='${successTarget}'`);
   if (!successTargetExists) issues.push('success_target_element_missing');
 
@@ -411,18 +495,12 @@ function auditOneButton(spec, src) {
   if (!errorTargetExists && isFetch) issues.push('error_target_element_missing');
 
   return {
-    id,
-    exists,
-    has_handler: hasHandler,
-    has_loading: hasLoading,
-    has_requires_guard: hasRequiresGuard,
-    has_success_target: hasSuccessTarget,
-    has_error_target: hasErrorTarget,
-    danger_has_confirm: dangerHasConfirm,
+    id, exists, has_handler: hasHandler, has_loading: hasLoading,
+    has_requires_guard: hasRequiresGuard, has_success_target: hasSuccessTarget,
+    has_error_target: hasErrorTarget, danger_has_confirm: dangerHasConfirm,
     admin_has_guard: adminHasGuard,
     target_exists: successTargetExists && errorTargetExists,
-    issues,
-    pass: issues.length === 0
+    issues, pass: issues.length === 0
   };
 }
 
@@ -449,53 +527,44 @@ function repairButton({ id, original_spec, issues, page_source }) {
   if (!original_spec) throw new Error('original_spec is required');
   if (!Array.isArray(issues)) throw new Error('issues must be an array');
 
-  // Build a repaired spec from the original, filling in gaps based on issues
   const repairedSpec = Object.assign({}, original_spec, { id });
   const diff_notes = [];
 
   if (issues.includes('missing_loading_state')) {
-    repairedSpec.loading_label = repairedSpec.loading_label || 'Loading…';
+    repairedSpec.loading_label = repairedSpec.loading_label || 'Loading\u2026';
     diff_notes.push('Added data-loading-label attribute.');
   }
-
   if (issues.includes('missing_error_target')) {
     const inferredTarget = `${id}Status`;
     repairedSpec.error_target = repairedSpec.error_target || inferredTarget;
     diff_notes.push(`Added error_target: "${repairedSpec.error_target}". Create <span id="${repairedSpec.error_target}"></span> in the page if missing.`);
   }
-
   if (issues.includes('missing_success_target')) {
     const inferredTarget = `${id}Out`;
     repairedSpec.success_target = repairedSpec.success_target || inferredTarget;
     diff_notes.push(`Added success_target: "${repairedSpec.success_target}". Create <div id="${repairedSpec.success_target}"></div> in the page if missing.`);
   }
-
   if (issues.includes('danger_missing_confirm')) {
     repairedSpec.confirm = true;
     diff_notes.push('Set confirm: true. Handler now calls confirm() before firing.');
   }
-
   if (issues.includes('missing_requires_guard')) {
     diff_notes.push('Handler now guards on all requires vars via window.__afoState before firing.');
   }
-
   if (issues.includes('missing_admin_guard')) {
     repairedSpec.admin_only = true;
     diff_notes.push('Wrapped button in data-admin-gate div. Hidden until afo:passcode-resolved fires.');
   }
-
   if (issues.includes('missing_element') || issues.includes('missing_handler')) {
     diff_notes.push('Full button regenerated from spec.');
   }
 
-  const result = generateButton(repairedSpec);
-
-  // If admin gate was missing, re-wrap
   if (issues.includes('missing_admin_guard')) {
     const adminResult = generateAdminButton(repairedSpec);
     return { id, html: adminResult.html, js: adminResult.js, diff_notes };
   }
 
+  const result = generateButton(repairedSpec);
   return { id, html: result.html, js: result.js, diff_notes };
 }
 
@@ -512,7 +581,6 @@ function buildButtonHTML(spec) {
     attrs.push(`data-endpoint="${escapeAttr(spec.endpoint)}"`);
     attrs.push(`data-loading-label="${escapeAttr(spec.loading_label ?? 'Loading\u2026')}"`);
   }
-
   if (spec.action === 'copy' && spec.copy_value) {
     attrs.push(`data-copy-value="${escapeAttr(spec.copy_value)}"`);
   }
@@ -525,23 +593,20 @@ function buildButtonHTML(spec) {
 }
 
 function buildButtonJS(spec) {
-  const id = spec.id;
   const requires = spec.requires ?? [];
-
-  // Guard conditions
   const guards = requires.map(v => `const ${v} = window.__afoState?.${v};`).join('\n    ');
   const guardCheck = requires.length > 0
     ? `if (!${requires.join(' || !')}) return;\n    `
     : '';
 
   switch (spec.action) {
-    case 'fetch': return buildFetchHandler(spec, guards, guardCheck);
-    case 'copy':  return buildCopyHandler(spec);
+    case 'fetch':    return buildFetchHandler(spec, guards, guardCheck);
+    case 'copy':     return buildCopyHandler(spec);
     case 'navigate': return buildNavigateHandler(spec);
     case 'toggle':   return buildToggleHandler(spec);
     case 'submit':   return buildSubmitHandler(spec, guards, guardCheck);
-    case 'noop': return `// Button "${id}" action: noop — no handler generated.`;
-    default: return `// Unknown action type: ${spec.action}`;
+    case 'noop':     return `// Button "${spec.id}" action: noop — no handler generated.`;
+    default:         return `// Unknown action type: ${spec.action}`;
   }
 }
 
@@ -549,12 +614,9 @@ function buildFetchHandler(spec, guards, guardCheck) {
   const { id, endpoint, method = 'GET', loading_label = 'Loading\u2026',
           success_target, error_target, confirm: needsConfirm } = spec;
 
-  const confirmStr = needsConfirm
-    ? `    if (!confirm('Are you sure?')) return;\n` : '';
-
-  // Replace :param tokens in endpoint
+  const confirmStr = needsConfirm ? `    if (!confirm('Are you sure?')) return;\n` : '';
   const endpointJS = endpoint
-    ? endpoint.replace(/:([\w]+)/g, (_, p) => `\${window.__afoState?.${p} ?? ''}`)
+    ? endpoint.replace(/:(\w+)/g, (_, p) => `\${window.__afoState?.${p} ?? ''}`)
     : '';
 
   const successWrite = success_target
@@ -641,9 +703,8 @@ function buildSubmitHandler(spec, guards, guardCheck) {
   const errorWrite = error_target
     ? `    document.getElementById('${error_target}')?.textContent = 'Error: ' + err.message;`
     : '    console.error(err);';
-
   const endpointJS = endpoint
-    ? endpoint.replace(/:([\w]+)/g, (_, p) => `\${window.__afoState?.${p} ?? ''}`)
+    ? endpoint.replace(/:(\w+)/g, (_, p) => `\${window.__afoState?.${p} ?? ''}`)
     : '/';
 
   return `(function() {
@@ -710,6 +771,26 @@ function jsonResponse(body, status = 200) {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    }
+  });
+}
+
+function htmlResponse(html, status = 200) {
+  return new Response(html, {
+    status,
+    headers: {
+      'Content-Type': 'text/html;charset=UTF-8',
+      'Access-Control-Allow-Origin': '*'
+    }
+  });
+}
+
+function textResponse(text, status = 200) {
+  return new Response(text, {
+    status,
+    headers: {
+      'Content-Type': 'text/plain;charset=UTF-8',
+      'Access-Control-Allow-Origin': '*'
     }
   });
 }
