@@ -1,0 +1,37 @@
+{
+  "ok": true,
+  "script_name": "afo-buttons-mcp",
+  "deployed": true,
+  "rollback": false,
+  "repo": "nothinginfinity/agent-bridge",
+  "branch": "main",
+  "worker_path": "workers/afo-buttons-mcp",
+  "entrypoint": "src/index.js",
+  "bundle_hash": "66d048c62a39423bf7558e1c31a1284cb5502786e41f93a06a12d0dfcbaf3f76",
+  "urls": {
+    "primary": "https://afo-buttons-mcp.jaredtechfit.workers.dev",
+    "health": "https://afo-buttons-mcp.jaredtechfit.workers.dev/health",
+    "mcp": "https://afo-buttons-mcp.jaredtechfit.workers.dev/mcp",
+    "llms": "https://afo-buttons-mcp.jaredtechfit.workers.dev/llms.txt"
+  },
+  "smoke_tests": {
+    "ok": false,
+    "urls": {
+      "primary": "https://afo-buttons-mcp.jaredtechfit.workers.dev",
+      "health": "https://afo-buttons-mcp.jaredtechfit.workers.dev/health",
+      "mcp": "https://afo-buttons-mcp.jaredtechfit.workers.dev/mcp",
+      "llms": "https://afo-buttons-mcp.jaredtechfit.workers.dev/llms.txt"
+    },
+    "checks": {
+      "health": false,
+      "llms": false,
+      "mcp_tools_list": false
+    }
+  },
+  "cloudflare": {
+    "status": 200,
+    "success": true,
+    "errors": []
+  },
+  "deployed_at": "2026-06-02T02:02:57.055Z"
+}
