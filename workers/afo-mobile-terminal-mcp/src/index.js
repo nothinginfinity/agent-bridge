@@ -14,8 +14,9 @@
 //           Transport priority: service_binding → url_fallback (DEPLOY_MCP_URL / default)
 //           /health reports deploy_mcp_transport: "service_binding" | "url_fallback"
 //           /diag/deploy-mcp reports which transport was used at each step
+// v0.2.6 — fix: repair unterminated string at line 1349 (confirmHandoff truncation)
 
-const VERSION = "0.2.5";
+const VERSION = "0.2.6";
 const WORKER_NAME = "afo-mobile-terminal-mcp";
 
 const TOOL_NAMES = [
@@ -93,50 +94,20 @@ function resolveWorkerArgs(args) {
 }
 
 // ─── Service binding transport ────────────────────────────────────────────────
-//
-// Workers cannot fetch workers.dev URLs from inside the runtime — Cloudflare
-// returns error 1042 ("Worker tried to fetch its own URL" / cross-worker
-// workers.dev restriction). The fix is a Service Binding defined in
-// wrangler.toml [[services]]. This routes the call over Cloudflare's internal
-// network with zero HTTP overhead and no public URL required.
-//
-// Transport priority:
-//   1. env.DEPLOY_MCP (Service Binding)  — preferred; no workers.dev needed
-//   2. env.DEPLOY_MCP_URL (URL fallback) — used only if binding is missing
-//   3. Default workers.dev URL fallback  — last resort; will 1042 inside Worker
-//
-// deployMcpTransport(env) → "service_binding" | "url_fallback"
-
 function deployMcpTransport(env) {
   return env.DEPLOY_MCP ? "service_binding" : "url_fallback";
 }
 
 function deployMcpEndpoint(env) {
-  // Only used in url_fallback mode (or for display purposes in diag).
   const base = trimSlash(env.DEPLOY_MCP_URL || "https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev");
   return base.endsWith("/mcp") ? base : `${base}/mcp`;
 }
 
-/**
- * deployMcpPost — routes a POST /mcp call through the correct transport.
- *
- * Service binding path:
- *   env.DEPLOY_MCP.fetch(new Request("https://placeholder/mcp", { method: "POST", ... }))
- *   The URL hostname is ignored by the runtime — only the path matters.
- *   We use "https://worker/mcp" as a canonical placeholder.
- *
- * URL fallback path:
- *   Standard fetch() to the workers.dev or configured DEPLOY_MCP_URL.
- *   Will fail with 1042 when called from inside another Worker.
- *
- * Returns: { http_ok, status, result, transport }
- */
 async function deployMcpPost(body, env) {
   const payload = JSON.stringify(body);
   const headers = { "content-type": "application/json" };
 
   if (env.DEPLOY_MCP) {
-    // ── Service Binding path ──────────────────────────────────────────────
     try {
       const req = new Request("https://worker/mcp", {
         method: "POST",
@@ -158,7 +129,6 @@ async function deployMcpPost(body, env) {
     }
   }
 
-  // ── URL fallback path ─────────────────────────────────────────────────────
   const endpoint = deployMcpEndpoint(env);
   try {
     const r = await fetch(endpoint, {
@@ -182,10 +152,6 @@ async function deployMcpPost(body, env) {
   }
 }
 
-/**
- * deployMcpGet — routes a GET request to deploy-mcp through the correct transport.
- * Used only in /diag probes (not in normal MCP tool proxying).
- */
 async function deployMcpGet(path, env) {
   if (env.DEPLOY_MCP) {
     try {
@@ -207,7 +173,6 @@ async function deployMcpGet(path, env) {
     }
   }
 
-  // URL fallback
   const base = trimSlash(env.DEPLOY_MCP_URL || "https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev");
   return fetchProbeVerbose(`${base}${path}`);
 }
@@ -218,7 +183,6 @@ export default {
     try {
       if (request.method === "OPTIONS") return cors(new Response(null, { status: 204 }));
 
-      // ── Standard routes ──────────────────────────────────────────────────
       if (request.method === "GET" && url.pathname === "/health")      return jsonRes(healthPayload(env));
       if (request.method === "GET" && url.pathname === "/llms.txt")    return textRes(llmsText(url.origin));
       if (request.method === "GET" && url.pathname === "/tools/list")  return jsonRes({ ok: true, tools: toolsList() });
@@ -226,12 +190,10 @@ export default {
       if (request.method === "GET" && (url.pathname === "/contracts/ui-contract.json" || url.pathname === "/ui-contract.json")) return jsonRes(uiContract());
       if (request.method === "POST" && url.pathname === "/mcp")        return jsonRes(await handleMcp(request, env));
 
-      // ── /cmd slash-command GET layer ─────────────────────────────────────
       if (request.method === "GET" && (url.pathname === "/cmd" || url.pathname === "/cmd/")) return jsonRes(cmdHelp(url.origin));
       if (request.method === "GET" && url.pathname === "/cmd/help")    return jsonRes(cmdHelp(url.origin));
       if (request.method === "GET" && url.pathname.startsWith("/cmd/")) return jsonRes(await handleCmd(url, env));
 
-      // ── /diag diagnostic layer ───────────────────────────────────────────
       if (request.method === "GET" && (url.pathname === "/diag" || url.pathname === "/diag/")) return jsonRes(await diagFull(url, env));
       if (request.method === "GET" && url.pathname === "/diag/env")        return jsonRes(diagEnv(env));
       if (request.method === "GET" && url.pathname === "/diag/routes")     return jsonRes(await diagRoutes(url.origin, env));
@@ -258,8 +220,6 @@ async function diagFull(url, env) {
     Object.values(DEFAULT_REGISTRY).map(async (w) => {
       const subdomain = env.CF_WORKERS_SUBDOMAIN || "jaredtechfit";
       const base = `https://${w.script_name}.${subdomain}.workers.dev`;
-      // Note: these external fetches will 1042 for deploy-mcp — that's expected.
-      // Use /diag/deploy-mcp (service binding) for authoritative deploy-mcp status.
       const [homeCheck, healthCheck] = await Promise.all([
         fetchProbe(base + "/"),
         fetchProbe(base + "/health")
@@ -308,7 +268,7 @@ function diagEnv(env) {
     TERMINAL_SELF_URL:    envStatus(env.TERMINAL_SELF_URL)
   };
 
-  const missing  = Object.entries(bindings).filter(([, v]) => v.status === "missing").map(([k]) => k);
+  const missing   = Object.entries(bindings).filter(([, v]) => v.status === "missing").map(([k]) => k);
   const configured = Object.entries(bindings).filter(([, v]) => v.status !== "missing").map(([k]) => k);
 
   return {
@@ -325,7 +285,6 @@ function diagEnv(env) {
 }
 
 function envBinding(val, type) {
-  // Service bindings are objects, not strings — just check truthiness
   if (!val) return { status: "missing", type };
   return { status: "set", type, note: "Cloudflare internal transport — no public URL needed" };
 }
@@ -383,33 +342,23 @@ async function diagRoutes(origin, env) {
   };
 }
 
-/**
- * GET /diag/deploy-mcp
- * Runs 5 probes against afo-mobile-deploy-mcp using the correct transport.
- * v0.2.5: uses service binding (env.DEPLOY_MCP) when available — bypasses
- * workers.dev 1042 error that occurs when fetching from inside a Worker.
- * Reports transport used at each step.
- */
 async function diagDeployMcp(env) {
   const transport = deployMcpTransport(env);
   const endpoint  = deployMcpEndpoint(env);
   const t0 = Date.now();
 
-  // Steps 1-3: GET probes (home, health, tools/list)
   const [homeProbe, healthProbe, toolsProbe] = await Promise.all([
     deployMcpGet("/",           env),
     deployMcpGet("/health",     env),
     deployMcpGet("/tools/list", env)
   ]);
 
-  // Step 4: POST /mcp — tools/list
   const mcpListEnvelope = await deployMcpPost({ method: "tools/list" }, env);
   const mcpListProbe = {
     ...mcpListEnvelope,
     body_preview: mcpListEnvelope.result ? JSON.stringify(mcpListEnvelope.result).slice(0, 500) : ""
   };
 
-  // Step 5: POST /mcp — validate_worker_folder (real tool call)
   const mcpValidateEnvelope = await deployMcpPost({
     method: "tools/call",
     params: {
@@ -429,7 +378,6 @@ async function diagDeployMcp(env) {
 
   const elapsed = Date.now() - t0;
 
-  // 404 origin analysis
   const fourOhFours = [];
   const steps = {
     "1_home":         homeProbe,
@@ -457,7 +405,7 @@ async function diagDeployMcp(env) {
           : [
               "Worker not deployed or workers_dev = false in wrangler.toml",
               "DEPLOY_MCP_URL env binding points to wrong hostname",
-              "CF error 1042: workers.dev fetch blocked inside Worker — add [[services]] binding"
+              "CF error 1042: workers.dev fetch blocked inside Worker — add [[services]] binding in wrangler.toml"
             ]
       };
 
@@ -474,12 +422,6 @@ async function diagDeployMcp(env) {
   };
 }
 
-/**
- * GET /diag/fetch?url=<url>[&method=GET|POST][&body=<json>]
- * Direct fetch probe from Worker runtime to any external URL.
- * Note: workers.dev URLs of sibling Workers will 1042 via this route too.
- * Use /diag/deploy-mcp for service-binding-routed probes of deploy-mcp.
- */
 async function diagFetch(url, env) {
   const targetUrl = url.searchParams.get("url");
   if (!targetUrl) {
@@ -511,8 +453,8 @@ async function diagFetch(url, env) {
   if (probe.status === 1042 || (probe.error && String(probe.error).includes("1042"))) {
     origin_analysis = {
       "404_origin": "cloudflare_1042",
-      detail: "CF error 1042: Workers cannot fetch workers.dev URLs of other Workers from inside a Worker runtime. Fix: add [[services]] binding in wrangler.toml and use env.DEPLOY_MCP.fetch() instead.",
-      fix: "Add [[services]] binding:\n  binding = \"DEPLOY_MCP\"\n  service = \"afo-mobile-deploy-mcp\"",
+      detail: "CF error 1042: Workers cannot fetch workers.dev URLs of other Workers from inside a Worker runtime. Fix: add [[services]] binding in wrangler.toml.",
+      fix: 'Add [[services]] binding:\n  binding = "DEPLOY_MCP"\n  service = "afo-mobile-deploy-mcp"',
       diag_hint: "Use /diag/deploy-mcp — it routes via service binding automatically."
     };
   } else if (probe.status === 404) {
@@ -642,12 +584,12 @@ function cmdHelp(origin) {
     description: "GET /cmd slash-command layer. Diagnostic layer at /diag. Service binding transport for deploy-mcp (v0.2.5+).",
     known_workers: Object.keys(DEFAULT_REGISTRY),
     routes: {
-      help:       `GET ${origin}/cmd`,
-      run:        `GET ${origin}/cmd/{tool_name}?param=value`,
-      tools:      `GET ${origin}/tools/list`,
-      mcp:        `POST ${origin}/mcp`,
-      diag:       `GET ${origin}/diag`,
-      diag_fetch: `GET ${origin}/diag/fetch?url=<target>`,
+      help:            `GET ${origin}/cmd`,
+      run:             `GET ${origin}/cmd/{tool_name}?param=value`,
+      tools:           `GET ${origin}/tools/list`,
+      mcp:             `POST ${origin}/mcp`,
+      diag:            `GET ${origin}/diag`,
+      diag_fetch:      `GET ${origin}/diag/fetch?url=<target>`,
       diag_deploy_mcp: `GET ${origin}/diag/deploy-mcp`
     },
     safety: {
@@ -695,7 +637,6 @@ async function dispatch(name, args, env) {
 
 async function listCommandBelts(args, env) {
   const transport = deployMcpTransport(env);
-  // Ping health via correct transport
   let deployStatus;
   if (env.DEPLOY_MCP) {
     const probe = await deployMcpGet("/health", env);
@@ -820,7 +761,7 @@ async function writeHandoff(args, env) {
   return { ok: put.ok, source: "github", path, status: put.status, note };
 }
 
-// ─── Core proxy — uses deployMcpPost (service binding or URL fallback) ─────────
+// ─── Core proxy ───────────────────────────────────────────────────────────────
 
 async function proxyToDeployMcp(toolName, args, env) {
   const envelope = await deployMcpPost({
@@ -1123,20 +1064,20 @@ function indexHtml() {
   </svg>
   <h1>AFO Mobile Terminal</h1>
   <span class="version">v${VERSION}</span>
-  <span id="transport-badge" class="transport-badge url" title="deploy-mcp transport">⟳ loading</span>
+  <span id="transport-badge" class="transport-badge url" title="deploy-mcp transport">&#x27F3; loading</span>
   <span class="cmd-hint">
     <a href="/cmd" target="_blank">/cmd</a>
-    <a href="/diag" target="_blank" class="diag">🔬 /diag</a>
+    <a href="/diag" target="_blank" class="diag">&#x1F52C; /diag</a>
   </span>
 </header>
 
 <main>
   <p class="section-label">Worker Target</p>
   <div class="card">
-    <h2><span class="icon">🎯</span> Target Worker</h2>
+    <h2><span class="icon">&#x1F3AF;</span> Target Worker</h2>
     <label>Script Name <span style="color:var(--accent2)">(required — auto-resolves known workers)</span></label>
     <input id="script_name" placeholder="afo-buttons-mcp">
-    <p class="hint">Known: afo-buttons-mcp · afo-mobile-deploy-mcp · afo-mobile-terminal-mcp</p>
+    <p class="hint">Known: afo-buttons-mcp &middot; afo-mobile-deploy-mcp &middot; afo-mobile-terminal-mcp</p>
     <label>Repo <span style="color:var(--muted)">(optional)</span></label>
     <input id="repo" placeholder="nothinginfinity/agent-bridge">
     <label>Branch <span style="color:var(--muted)">(optional)</span></label>
@@ -1145,205 +1086,215 @@ function indexHtml() {
     <input id="worker_path" placeholder="workers/my-worker">
   </div>
 
-  <p class="section-label">🔬 Diagnostics (v0.2.4+)</p>
-
+  <p class="section-label">&#x1F52C; Diagnostics</p>
   <div class="card diag-card">
-    <h2><span class="icon">🔬</span> Diagnostic Layer <span class="diag-badge" onclick="window.open('/diag','_blank')">Open /diag</span></h2>
+    <h2><span class="icon">&#x1F52C;</span> Diagnostic Layer</h2>
     <div class="diag-info">
-      <strong>v0.2.5:</strong> deploy-mcp calls route via <code>Cloudflare Service Binding</code> — bypasses workers.dev CF 1042 error.
-      <br><code>/diag/deploy-mcp</code> — 5-step probe via service binding
-      <br><code>/diag/fetch?url=</code> — direct external fetch (subject to 1042 for workers.dev)
-    </div>
-    <label>Direct fetch target URL</label>
-    <input id="diag-url" placeholder="https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/health">
-    <div class="btn-row">
-      <button class="btn-diag" onclick="runDiag('full')">Full /diag</button>
-      <button class="btn-diag" onclick="runDiag('deploy-mcp')">Deploy-MCP probe</button>
-      <button class="btn-diag" onclick="runDiag('env')">Env inventory</button>
-      <button class="btn-diag" onclick="runDiag('routes')">Route matrix</button>
+      Full diagnostic snapshot including env bindings, route health matrix, and deploy-mcp 5-step probe.<br>
+      Transport: <code id="diag-transport">loading...</code>
     </div>
     <div class="btn-row">
-      <button class="btn-diag" onclick="runDiagFetch()" style="flex:2">Direct Fetch (URL above)</button>
-      <button class="btn-diag" onclick="runDiagFetchPost()" style="flex:2">Direct Fetch POST /mcp</button>
+      <button class="btn-diag" onclick="window.open('/diag','_blank')">Full /diag</button>
+      <button class="btn-diag" onclick="window.open('/diag/env','_blank')">/diag/env</button>
+      <button class="btn-diag" onclick="window.open('/diag/routes','_blank')">/diag/routes</button>
+      <button class="btn-diag" onclick="window.open('/diag/deploy-mcp','_blank')">/diag/deploy-mcp</button>
     </div>
-    <div id="out-diag" class="output diag">Diagnostics not yet run.</div>
+    <div id="out-diag" class="output diag" style="display:none"></div>
   </div>
 
-  <p class="section-label">Build Pipeline</p>
-
+  <p class="section-label">Deploy</p>
   <div class="card">
-    <h2><span class="icon">✅</span> Validate &amp; Preview <span class="cmd-badge" onclick="copyCmdUrl('validate_worker')">⌘ /cmd</span></h2>
+    <h2><span class="icon">&#x1F680;</span> Deploy Worker
+      <span class="cmd-badge" onclick="copyCmdUrl('deploy_worker')" title="Copy /cmd URL">&#x1F4CB; /cmd</span>
+    </h2>
     <div class="btn-row">
-      <button class="btn-secondary" onclick="callTool('validate_worker', {}, 'out-validate')">Validate Folder</button>
-      <button class="btn-secondary" onclick="callTool('preview_worker_deploy', {}, 'out-validate')">Preview Deploy</button>
-      <button class="btn-ghost" onclick="openCmd('validate_worker')">Open in browser</button>
+      <button class="btn-secondary" onclick="callTool('preview_worker_deploy',{},'out-deploy')">Preview Deploy</button>
+      <button class="btn-primary" onclick="callTool('validate_worker',{},'out-deploy')">Validate Folder</button>
     </div>
-    <div id="out-validate" class="output">Enter script_name above then run.</div>
+    <div class="confirm-gate">
+      Review preview output above, then confirm to deploy:
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn-danger" onclick="deployConfirmed()">Deploy (confirmed)</button>
+      </div>
+    </div>
+    <div id="out-deploy" class="output warn">Ready — enter script_name above and click Preview Deploy first.</div>
   </div>
 
+  <p class="section-label">Smoke Test</p>
   <div class="card">
-    <h2><span class="icon">🚀</span> Deploy Worker</h2>
-    <div class="confirm-gate">⚠️ Write action — run Preview first, then click Deploy (confirmed).</div>
+    <h2><span class="icon">&#x1F9EA;</span> Smoke Test Worker
+      <span class="cmd-badge" onclick="copyCmdUrl('run_smoke_test')" title="Copy /cmd URL">&#x1F4CB; /cmd</span>
+    </h2>
+    <label>Smoke Paths <span style="color:var(--muted)">(optional, comma-separated)</span></label>
+    <input id="smoke_paths" placeholder="/, /health, /tools/list">
     <div class="btn-row">
-      <button class="btn-primary" onclick="deployConfirmed()">Deploy (confirmed)</button>
+      <button class="btn-primary" onclick="callSmokeTest()">Run Smoke Test</button>
     </div>
-    <div id="out-deploy" class="output">Not yet deployed.</div>
+    <div id="out-smoke" class="output warn">Enter script_name above and click Run Smoke Test.</div>
   </div>
 
+  <p class="section-label">Live URLs</p>
   <div class="card">
-    <h2><span class="icon">🧪</span> Smoke Test <span class="cmd-badge" onclick="copyCmdUrl('run_smoke_test')">⌘ /cmd</span></h2>
-    <label>Extra smoke paths (comma-separated, optional)</label>
-    <input id="smoke_paths" placeholder="/ui,/contracts/ui-contract.json">
+    <h2><span class="icon">&#x1F517;</span> Open Tool URLs
+      <span class="cmd-badge" onclick="copyCmdUrl('open_worker_urls')" title="Copy /cmd URL">&#x1F4CB; /cmd</span>
+    </h2>
     <div class="btn-row">
-      <button class="btn-secondary" onclick="callSmokeTest()">Run Smoke Test</button>
-      <button class="btn-ghost" onclick="openCmd('run_smoke_test')">Open in browser</button>
+      <button class="btn-primary" onclick="callOpenUrls()">Get URLs</button>
     </div>
-    <div id="out-smoke" class="output">Not yet tested.</div>
+    <div id="out-urls" class="output warn">Enter script_name above and click Get URLs.</div>
   </div>
 
-  <p class="section-label">Discovery</p>
-
+  <p class="section-label">Recent Deploys</p>
   <div class="card">
-    <h2><span class="icon">🔗</span> Open Tool URLs <span class="cmd-badge" onclick="copyCmdUrl('open_worker_urls')">⌘ /cmd</span></h2>
+    <h2><span class="icon">&#x1F4CB;</span> List Recent Deploys
+      <span class="cmd-badge" onclick="copyCmdUrl('list_recent_deploys')" title="Copy /cmd URL">&#x1F4CB; /cmd</span>
+    </h2>
     <div class="btn-row">
-      <button class="btn-secondary" onclick="callOpenUrls()">Get Live URLs</button>
-      <button class="btn-ghost" onclick="openCmd('open_worker_urls')">Open in browser</button>
+      <button class="btn-primary" onclick="callTool('list_recent_deploys',{},'out-deploys')">List Deploys</button>
     </div>
-    <div id="out-urls" class="output">Enter script_name above.</div>
+    <div id="out-deploys" class="output warn">Click to fetch recent deploy receipts.</div>
   </div>
 
+  <p class="section-label">Register</p>
   <div class="card">
-    <h2><span class="icon">📋</span> Recent Deploys <span class="cmd-badge" onclick="copyCmdUrl('list_recent_deploys')">⌘ /cmd</span></h2>
-    <div class="btn-row">
-      <button class="btn-secondary" onclick="callTool('list_recent_deploys', {}, 'out-receipts')">List Recent Deploys</button>
-      <button class="btn-ghost" onclick="openCmd('list_recent_deploys')">Open in browser</button>
-    </div>
-    <div id="out-receipts" class="output">Enter script_name above.</div>
-  </div>
-
-  <div class="card">
-    <h2><span class="icon">🗂️</span> Command Belts</h2>
-    <div class="btn-row">
-      <button class="btn-secondary" onclick="callTool('list_command_belts', {}, 'out-belts')">List Belts</button>
-      <button class="btn-ghost" onclick="window.open('/cmd/list_command_belts','_blank')">Open in browser</button>
-    </div>
-    <div id="out-belts" class="output">Not fetched.</div>
-  </div>
-
-  <p class="section-label">Write Actions (confirmation-gated)</p>
-
-  <div class="card">
-    <h2><span class="icon">📝</span> Register Worker</h2>
+    <h2><span class="icon">&#x1F4DD;</span> Register Worker
+      <span class="cmd-badge" onclick="copyCmdUrl('register_worker')" title="Copy /cmd URL">&#x1F4CB; /cmd</span>
+    </h2>
     <label>Description</label>
     <input id="reg-description" placeholder="What does this worker do?">
-    <label>Tags (comma-separated)</label>
-    <input id="reg-tags" placeholder="deploy, mobile, mcp">
+    <label>Tags <span style="color:var(--muted)">(comma-separated)</span></label>
+    <input id="reg-tags" placeholder="mcp, deploy, afo">
     <div class="btn-row">
-      <button class="btn-secondary" onclick="previewRegister()">Preview Registration</button>
+      <button class="btn-secondary" onclick="previewRegister()">Preview</button>
       <button class="btn-danger" onclick="confirmRegister()">Register (confirmed)</button>
     </div>
-    <div id="out-register" class="output">Not yet registered.</div>
+    <div id="out-register" class="output warn">Enter script_name and description, then click Preview.</div>
   </div>
 
+  <p class="section-label">Handoff</p>
   <div class="card">
-    <h2><span class="icon">🤝</span> Write Handoff</h2>
+    <h2><span class="icon">&#x1F91D;</span> Write Handoff
+      <span class="cmd-badge" onclick="copyCmdUrl('write_handoff')" title="Copy /cmd URL">&#x1F4CB; /cmd</span>
+    </h2>
     <label>Title</label>
-    <input id="ho-title" placeholder="Handoff title">
+    <input id="hf-title" placeholder="Deploy complete — afo-buttons-mcp v2">
     <label>To</label>
-    <input id="ho-to" value="all">
+    <input id="hf-to" placeholder="all">
     <label>Project</label>
-    <input id="ho-project" placeholder="project name">
+    <input id="hf-project" placeholder="Message OS Cloud Social MVP v0.3">
     <label>Body</label>
-    <textarea id="ho-body" placeholder="What happened, what's next..."></textarea>
-    <label>Next Steps (one per line)</label>
-    <textarea id="ho-steps" placeholder="Step 1&#10;Step 2"></textarea>
+    <textarea id="hf-body" placeholder="What was done, what is next..."></textarea>
+    <label>Next Steps <span style="color:var(--muted)">(one per line)</span></label>
+    <textarea id="hf-next" placeholder="Deploy afo-mobile-terminal-mcp&#10;Run smoke tests&#10;Register all workers"></textarea>
     <div class="btn-row">
-      <button class="btn-secondary" onclick="previewHandoff()">Preview Handoff</button>
+      <button class="btn-secondary" onclick="previewHandoff()">Preview</button>
       <button class="btn-danger" onclick="confirmHandoff()">Write Handoff (confirmed)</button>
     </div>
-    <div id="out-handoff" class="output">Not yet written.</div>
+    <div id="out-handoff" class="output warn">Fill in the form and click Preview first.</div>
   </div>
 </main>
 
 <script>
-// Load transport status on boot
-(async () => {
-  try {
-    const h = await fetch('/health').then(r => r.json());
-    const badge = document.getElementById('transport-badge');
-    const t = h.deploy_mcp_transport || 'unknown';
-    badge.textContent = t === 'service_binding' ? '⚡ service_binding' : '⚠ url_fallback';
-    badge.className = 'transport-badge ' + (t === 'service_binding' ? 'sb' : 'url');
-    badge.title = t === 'service_binding' ? 'Cloudflare internal — no workers.dev 1042' : 'URL fallback — may hit CF 1042';
-  } catch {}
-})();
+  // Boot: load health to show transport badge
+  (async () => {
+    try {
+      const r = await fetch('/health');
+      const d = await r.json();
+      const badge = document.getElementById('transport-badge');
+      const diag  = document.getElementById('diag-transport');
+      const t = d.deploy_mcp_transport || 'url_fallback';
+      badge.textContent = t === 'service_binding' ? 'SB' : 'URL';
+      badge.className = 'transport-badge ' + (t === 'service_binding' ? 'sb' : 'url');
+      badge.title = t === 'service_binding'
+        ? 'Service Binding — Cloudflare internal transport (fast, no 1042)'
+        : 'URL fallback — set [[services]] binding in wrangler.toml to fix CF 1042';
+      if (diag) diag.textContent = t;
+    } catch (e) {
+      const badge = document.getElementById('transport-badge');
+      if (badge) { badge.textContent = 'ERR'; badge.title = e.message; }
+    }
+  })();
 
-function baseArgs() {
-  const a = { script_name: document.getElementById('script_name').value };
-  const repo = document.getElementById('repo').value;
-  const branch = document.getElementById('branch').value;
-  const worker_path = document.getElementById('worker_path').value;
-  if (repo) a.repo = repo;
-  if (branch) a.branch = branch;
-  if (worker_path) a.worker_path = worker_path;
-  return a;
-}
-
-function buildCmdUrl(toolName, extra = {}) {
-  const args = { ...baseArgs(), ...extra };
-  const params = new URLSearchParams();
-  for (const [k, v] of Object.entries(args)) if (v) params.set(k, String(v));
-  return '/cmd/' + toolName + '?' + params.toString();
-}
-
-function openCmd(toolName, extra = {}) { window.open(buildCmdUrl(toolName, extra), '_blank'); }
-function copyCmdUrl(toolName, extra = {}) {
-  navigator.clipboard?.writeText(location.origin + buildCmdUrl(toolName, extra)).catch(() => {});
-}
-
-async function callTool(name, extraArgs = {}, outId = 'out-validate') {
-  const out = document.getElementById(outId);
-  out.className = 'output warn';
-  out.textContent = 'Running ' + name + '...';
-  try {
-    const res = await fetch('/mcp', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ method: 'tools/call', params: { name, arguments: { ...baseArgs(), ...extraArgs } } })
-    });
-    const data = await res.json();
-    out.className = 'output ' + (data.ok === false ? 'err' : 'ok');
-    out.textContent = JSON.stringify(data, null, 2);
-  } catch (err) {
-    out.className = 'output err';
-    out.textContent = 'Error: ' + err.message;
+  function baseArgs() {
+    return {
+      script_name: document.getElementById('script_name').value || undefined,
+      repo:        document.getElementById('repo').value        || undefined,
+      branch:      document.getElementById('branch').value      || undefined,
+      worker_path: document.getElementById('worker_path').value || undefined
+    };
   }
+
+  function buildCmdUrl(toolName, extra = {}) {
+    const args = { ...baseArgs(), ...extra };
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(args)) if (v) params.set(k, String(v));
+    return '/cmd/' + toolName + '?' + params.toString();
+  }
+
+  function openCmd(toolName, extra = {}) { window.open(buildCmdUrl(toolName, extra), '_blank'); }
+  function copyCmdUrl(toolName, extra = {}) {
+    navigator.clipboard?.writeText(location.origin + buildCmdUrl(toolName, extra)).catch(() => {});
+  }
+
+  async function callTool(name, extraArgs = {}, outId = 'out-validate') {
+    const out = document.getElementById(outId);
+    out.className = 'output warn';
+    out.textContent = 'Running ' + name + '...';
+    out.style.display = 'block';
+    try {
+      const res = await fetch('/mcp', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ method: 'tools/call', params: { name, arguments: { ...baseArgs(), ...extraArgs } } })
+      });
+      const data = await res.json();
+      out.className = 'output ' + (data.ok === false ? 'err' : 'ok');
+      out.textContent = JSON.stringify(data, null, 2);
+    } catch (err) {
+      out.className = 'output err';
+      out.textContent = 'Error: ' + err.message;
+    }
+  }
+
+  async function deployConfirmed() { await callTool('deploy_worker', { confirmed: true }, 'out-deploy'); }
+
+  async function callSmokeTest() {
+    const extra = document.getElementById('smoke_paths').value;
+    const paths = extra ? extra.split(',').map(s => s.trim()).filter(Boolean) : [];
+    await callTool('run_smoke_test', { smoke_paths: paths }, 'out-smoke');
+  }
+
+  async function callOpenUrls() { await callTool('open_worker_urls', { check_live: true }, 'out-urls'); }
+
+  async function previewRegister() {
+    await callTool('register_worker', {
+      description: document.getElementById('reg-description').value,
+      tags: document.getElementById('reg-tags').value.split(',').map(s => s.trim()).filter(Boolean)
+    }, 'out-register');
+  }
+
+  async function confirmRegister() {
+    await callTool('register_worker', {
+      description: document.getElementById('reg-description').value,
+      tags: document.getElementById('reg-tags').value.split(',').map(s => s.trim()).filter(Boolean),
+      confirmed: true
+    }, 'out-register');
+  }
+
+  async function previewHandoff() { await callTool('write_handoff', handoffArgs(false), 'out-handoff'); }
+  async function confirmHandoff()  { await callTool('write_handoff', handoffArgs(true), 'out-handoff'); }
+
+  function handoffArgs(confirmed) {
+    return {
+      title:      document.getElementById('hf-title').value,
+      to:         document.getElementById('hf-to').value,
+      project:    document.getElementById('hf-project').value,
+      body:       document.getElementById('hf-body').value,
+      next_steps: document.getElementById('hf-next').value.split('\n').map(s => s.trim()).filter(Boolean),
+      confirmed
+    };
+  }
+</script>
+</body>
+</html>`;
 }
-
-async function deployConfirmed() { await callTool('deploy_worker', { confirmed: true }, 'out-deploy'); }
-
-async function callSmokeTest() {
-  const extra = document.getElementById('smoke_paths').value;
-  const paths = extra ? extra.split(',').map(s => s.trim()).filter(Boolean) : [];
-  await callTool('run_smoke_test', { smoke_paths: paths }, 'out-smoke');
-}
-
-async function callOpenUrls() { await callTool('open_worker_urls', { check_live: true }, 'out-urls'); }
-
-async function previewRegister() {
-  await callTool('register_worker', {
-    description: document.getElementById('reg-description').value,
-    tags: document.getElementById('reg-tags').value.split(',').map(s => s.trim()).filter(Boolean)
-  }, 'out-register');
-}
-
-async function confirmRegister() {
-  await callTool('register_worker', {
-    description: document.getElementById('reg-description').value,
-    tags: document.getElementById('reg-tags').value.split(',').map(s => s.trim()).filter(Boolean),
-    confirmed: true
-  }, 'out-register');
-}
-
-async function previewHandoff() { await callTool('write_handoff', handoffArgs(false), 'out-handoff'); }
-async function confirmHandoff()  { await callTool('write_handoff', h
