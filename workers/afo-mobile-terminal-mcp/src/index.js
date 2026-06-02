@@ -1,15 +1,19 @@
-// afo-mobile-terminal-mcp v0.2.1
+// afo-mobile-terminal-mcp v0.2.2
 // Command-center layer above individual MCP tools.
 // Orchestrates: deploy, smoke test, registry, handoff, Cloudflare inventory.
 // All write actions are preview-first and confirmation-gated.
 // Never expose secret values in UI, logs, receipts, or /health output.
 //
 // v0.2.0 — /cmd GET slash-command layer
-// v0.2.1 — fix: unwrap safePost envelope in proxyToDeployMcp so callers
-//           receive the inner tool result JSON, not the fetch wrapper.
-//           Fixes /cmd/deploy_worker preview returning 404/empty result.
+// v0.2.1 — fix: unwrap safePost envelope in proxyToDeployMcp
+// v0.2.2 — fix: normalize DEPLOY_MCP_URL to always POST to /mcp
+//           deployMcpEndpoint(env) strips trailing slashes, then appends
+//           /mcp only if the URL does not already end with /mcp.
+//           Fixes deploy_mcp_unreachable HTTP 404 when env var is set
+//           to the base domain (e.g. https://afo-mobile-deploy-mcp...dev)
+//           rather than the full endpoint (...dev/mcp).
 
-const VERSION = "0.2.1";
+const VERSION = "0.2.2";
 const WORKER_NAME = "afo-mobile-terminal-mcp";
 
 const TOOL_NAMES = [
@@ -29,7 +33,7 @@ const TOOL_NAMES = [
 const WRITE_TOOLS = new Set(["deploy_worker", "register_worker", "write_handoff"]);
 
 // Integration targets (env-configured)
-// DEPLOY_MCP_URL  — afo-mobile-deploy-mcp base URL
+// DEPLOY_MCP_URL  — afo-mobile-deploy-mcp base URL (with or without /mcp — normalised at runtime)
 // REGISTRY_URL    — AFO Tool Index / registry if available
 // HANDOFF_MCP_URL — Message OS / handoff inbox if available
 // CF_GATEWAY_URL  — Cloudflare infra gateway if available
@@ -198,9 +202,9 @@ async function dispatch(name, args, env) {
 // ─── Tool implementations ─────────────────────────────────────────────────────
 
 async function listCommandBelts(args, env) {
-  const deployMcpUrl = env.DEPLOY_MCP_URL || "https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev";
+  const deployMcpBase = trimSlash(env.DEPLOY_MCP_URL || "https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev");
   const belts = [
-    { name: "afo-mobile-deploy-mcp",   url: deployMcpUrl, status: await pingHealth(deployMcpUrl), role: "deploy" },
+    { name: "afo-mobile-deploy-mcp",   url: deployMcpBase, status: await pingHealth(deployMcpBase), role: "deploy" },
     { name: "afo-mobile-terminal-mcp", url: env.TERMINAL_SELF_URL || "https://afo-mobile-terminal-mcp.jaredtechfit.workers.dev", status: "self", role: "command-center" },
     { name: "registry",                url: env.REGISTRY_URL || null, status: env.REGISTRY_URL ? await pingHealth(env.REGISTRY_URL) : "not_configured", role: "registry" },
     { name: "handoff-mcp",             url: env.HANDOFF_MCP_URL || null, status: env.HANDOFF_MCP_URL ? await pingHealth(env.HANDOFF_MCP_URL) : "not_configured", role: "handoff" },
@@ -237,15 +241,11 @@ async function openWorkerUrls(args, env) {
 }
 
 async function validateWorker(args, env) {
-  // deploy-mcp tool name: validate_worker_folder
   return proxyToDeployMcp("validate_worker_folder", args, env);
 }
 
 async function previewWorkerDeploy(args, env) {
-  // deploy-mcp tool name: preview_worker_from_github
   const result = await proxyToDeployMcp("preview_worker_from_github", args, env);
-  // proxyToDeployMcp now returns the unwrapped tool result directly.
-  // Wrap with our own mode/note for clarity.
   return {
     ok: result.ok,
     mode: "preview",
@@ -264,17 +264,14 @@ async function deployWorker(args, env) {
       preview
     };
   }
-  // deploy-mcp tool name: deploy_worker_from_github
   return proxyToDeployMcp("deploy_worker_from_github", args, env);
 }
 
 async function runSmokeTest(args, env) {
-  // deploy-mcp tool name: run_worker_smoke_test
   return proxyToDeployMcp("run_worker_smoke_test", args, env);
 }
 
 async function listRecentDeploys(args, env) {
-  // deploy-mcp tool name: list_recent_deploys
   return proxyToDeployMcp("list_recent_deploys", args, env);
 }
 
@@ -331,43 +328,51 @@ async function writeHandoff(args, env) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
+ * Normalise DEPLOY_MCP_URL so we always POST to the /mcp endpoint.
+ *
+ * Accepts any of these inputs and always returns the /mcp endpoint URL:
+ *   https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev          → .../mcp
+ *   https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/         → .../mcp
+ *   https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/mcp      → .../mcp  (no-op)
+ *   https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/mcp/     → .../mcp  (no-op)
+ */
+function deployMcpEndpoint(env) {
+  const base = trimSlash(env.DEPLOY_MCP_URL || "https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev");
+  return base.endsWith("/mcp") ? base : `${base}/mcp`;
+}
+
+/**
  * Proxy a tool call to afo-mobile-deploy-mcp and return the UNWRAPPED
  * tool result (the JSON the deploy-mcp returned), not the fetch envelope.
- *
- * The fetch envelope { ok, status, result } is kept internally; callers
- * only see the inner result so ok/error fields are accurate.
  */
 async function proxyToDeployMcp(toolName, args, env) {
-  const base = trimSlash(env.DEPLOY_MCP_URL || "https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev");
-  const envelope = await safePost(`${base}/mcp`, {
+  const endpoint = deployMcpEndpoint(env);
+  const envelope = await safePost(endpoint, {
     method: "tools/call",
     params: { name: toolName, arguments: args }
   });
 
-  // Transport / network error — safePost sets http_ok:false and error string
   if (!envelope.http_ok) {
     return {
       ok: false,
       error: "deploy_mcp_unreachable",
-      deploy_mcp_url: base,
+      deploy_mcp_endpoint: endpoint,
       tool: toolName,
       detail: envelope.error || `HTTP ${envelope.status}`
     };
   }
 
-  // deploy-mcp returned a non-200 HTTP status
   if (envelope.status >= 400) {
     return {
       ok: false,
       error: "deploy_mcp_http_error",
-      deploy_mcp_url: base,
+      deploy_mcp_endpoint: endpoint,
       tool: toolName,
       http_status: envelope.status,
       result: envelope.result
     };
   }
 
-  // Unwrap: return the actual tool result JSON
   return envelope.result;
 }
 
@@ -429,7 +434,6 @@ async function httpOk(url) {
  * safePost — returns { http_ok, status, result } envelope.
  * http_ok = true means the HTTP request itself succeeded (2xx).
  * result  = parsed JSON body from the server.
- * Callers must unwrap result themselves (see proxyToDeployMcp).
  */
 async function safePost(url, body) {
   try {
@@ -511,6 +515,7 @@ function healthPayload(env) {
     version: VERSION,
     tools: TOOL_NAMES.length,
     cmd_layer: "enabled",
+    deploy_mcp_endpoint: deployMcpEndpoint(env),
     integrations: {
       deploy_mcp:  env.DEPLOY_MCP_URL  ? "configured" : "default",
       registry:    env.REGISTRY_URL    ? "configured" : "not_configured",
@@ -545,7 +550,7 @@ const DESCRIPTIONS = {
 };
 
 function llmsText(origin) {
-  return `# ${WORKER_NAME} v${VERSION}\n\nPurpose: Command-center layer above AFO MCP tools. Orchestrates deploy, smoke test, registry, handoff, and Cloudflare inventory for mobile-first workflows.\n\nBase URL: ${origin}\n\nRoutes:\n- GET /                             — Mobile terminal UI\n- GET /health                       — Health check (no secrets exposed)\n- GET /llms.txt\n- GET /tools/list\n- POST /mcp                         — MCP tool surface (canonical agent endpoint)\n- GET /contracts/ui-contract.json\n- GET /cmd                          — Slash-command help\n- GET /cmd/help                     — Slash-command help\n- GET /cmd/{tool_name}?param=value  — Run read/preview tool via browser/curl\n\nTools (${TOOL_NAMES.length}):\n${TOOL_NAMES.map(n => `- ${n}${WRITE_TOOLS.has(n) ? " [write — GET /cmd returns preview only]" : ""}`).join("\n")}\n\nIntegration targets:\n- afo-mobile-deploy-mcp (DEPLOY_MCP_URL env)   — deploy, validate, smoke test, receipts\n- AFO registry           (REGISTRY_URL env)      — list/register workers\n- handoff-mcp            (HANDOFF_MCP_URL env)   — write handoffs\n- Cloudflare gateway     (CF_GATEWAY_URL env)    — inventory\n- GitHub                 (GITHUB_TOKEN env)       — source-of-truth, receipts, handoffs\n\nSecurity:\n- All write actions require confirmed:true via POST /mcp\n- GET /cmd never executes writes\n- No secrets exposed in /health, UI, logs, or receipts\n`;
+  return `# ${WORKER_NAME} v${VERSION}\n\nPurpose: Command-center layer above AFO MCP tools. Orchestrates deploy, smoke test, registry, handoff, and Cloudflare inventory for mobile-first workflows.\n\nBase URL: ${origin}\n\nRoutes:\n- GET /                             — Mobile terminal UI\n- GET /health                       — Health check (no secrets exposed)\n- GET /llms.txt\n- GET /tools/list\n- POST /mcp                         — MCP tool surface (canonical agent endpoint)\n- GET /contracts/ui-contract.json\n- GET /cmd                          — Slash-command help\n- GET /cmd/help                     — Slash-command help\n- GET /cmd/{tool_name}?param=value  — Run read/preview tool via browser/curl\n\nTools (${TOOL_NAMES.length}):\n${TOOL_NAMES.map(n => `- ${n}${WRITE_TOOLS.has(n) ? " [write — GET /cmd returns preview only]" : ""}`).join("\n")}\n\nIntegration targets:\n- afo-mobile-deploy-mcp (DEPLOY_MCP_URL env)   — POST to /mcp (normalised at runtime)\n- AFO registry           (REGISTRY_URL env)      — list/register workers\n- handoff-mcp            (HANDOFF_MCP_URL env)   — write handoffs\n- Cloudflare gateway     (CF_GATEWAY_URL env)    — inventory\n- GitHub                 (GITHUB_TOKEN env)       — source-of-truth, receipts, handoffs\n\nSecurity:\n- All write actions require confirmed:true via POST /mcp\n- GET /cmd never executes writes\n- No secrets exposed in /health, UI, logs, or receipts\n`;
 }
 
 function uiContract() {
