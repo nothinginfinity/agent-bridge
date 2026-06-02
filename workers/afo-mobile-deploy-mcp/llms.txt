@@ -1,0 +1,23 @@
+# afo-mobile-deploy-mcp
+
+This is an MCP Worker for deploying Cloudflare Workers from GitHub.
+
+Use POST /mcp with tools/call.
+
+Recommended sequence:
+1. validate_worker_folder
+2. preview_worker_from_github
+3. deploy_worker_from_github
+4. run_worker_smoke_test
+5. write_deploy_receipt
+
+Required arguments:
+- repo
+- branch
+- worker_path
+- script_name
+
+Required secrets:
+- GITHUB_TOKEN
+- CF_ACCOUNT_ID
+- CF_API_TOKEN
