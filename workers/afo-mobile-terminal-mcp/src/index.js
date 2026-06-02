@@ -1,4 +1,4 @@
-// afo-mobile-terminal-mcp v0.2.2
+// afo-mobile-terminal-mcp v0.2.3
 // Command-center layer above individual MCP tools.
 // Orchestrates: deploy, smoke test, registry, handoff, Cloudflare inventory.
 // All write actions are preview-first and confirmation-gated.
@@ -7,13 +7,12 @@
 // v0.2.0 — /cmd GET slash-command layer
 // v0.2.1 — fix: unwrap safePost envelope in proxyToDeployMcp
 // v0.2.2 — fix: normalize DEPLOY_MCP_URL to always POST to /mcp
-//           deployMcpEndpoint(env) strips trailing slashes, then appends
-//           /mcp only if the URL does not already end with /mcp.
-//           Fixes deploy_mcp_unreachable HTTP 404 when env var is set
-//           to the base domain (e.g. https://afo-mobile-deploy-mcp...dev)
-//           rather than the full endpoint (...dev/mcp).
+// v0.2.3 — feat: script_name-only resolution via built-in DEFAULT_REGISTRY
+//           /cmd/deploy_worker?script_name=afo-buttons-mcp resolves to full
+//           { repo, branch, worker_path, script_name } without requiring all
+//           four params. Unknown script_name returns unknown_worker (not 404).
 
-const VERSION = "0.2.2";
+const VERSION = "0.2.3";
 const WORKER_NAME = "afo-mobile-terminal-mcp";
 
 const TOOL_NAMES = [
@@ -31,6 +30,90 @@ const TOOL_NAMES = [
 
 // Write tools: GET /cmd will never execute these — always returns confirmation_required.
 const WRITE_TOOLS = new Set(["deploy_worker", "register_worker", "write_handoff"]);
+
+// ─── Built-in default registry ────────────────────────────────────────────────
+// Maps script_name → canonical worker descriptor.
+// This is the source-of-truth when no external REGISTRY_URL is configured.
+// Add new workers here as they are deployed.
+const DEFAULT_REGISTRY = {
+  "afo-buttons-mcp": {
+    script_name:  "afo-buttons-mcp",
+    repo:         "nothinginfinity/agent-bridge",
+    branch:       "main",
+    worker_path:  "workers/afo-buttons-mcp",
+    description:  "AFO buttons MCP — standard route contract proof worker",
+    tags:         ["mcp", "buttons", "afo"]
+  },
+  "afo-mobile-deploy-mcp": {
+    script_name:  "afo-mobile-deploy-mcp",
+    repo:         "nothinginfinity/agent-bridge",
+    branch:       "main",
+    worker_path:  "workers/afo-mobile-deploy-mcp",
+    description:  "Mobile deploy MCP — validate, preview, deploy, smoke test, receipts",
+    tags:         ["mcp", "deploy", "mobile", "afo"]
+  },
+  "afo-mobile-terminal-mcp": {
+    script_name:  "afo-mobile-terminal-mcp",
+    repo:         "nothinginfinity/agent-bridge",
+    branch:       "main",
+    worker_path:  "workers/afo-mobile-terminal-mcp",
+    description:  "Mobile terminal MCP — command-center layer above AFO MCP tools",
+    tags:         ["mcp", "terminal", "mobile", "afo"]
+  }
+};
+
+/**
+ * Resolve args into a full worker descriptor.
+ *
+ * Priority:
+ *   1. If all four fields are already present, pass through as-is.
+ *   2. If only script_name is given, look it up in DEFAULT_REGISTRY.
+ *   3. If script_name is missing entirely, return a missing_fields error.
+ *   4. If script_name is present but not in DEFAULT_REGISTRY, return unknown_worker.
+ *
+ * Always returns either a full descriptor object or an error object
+ * (error objects have ok:false).
+ */
+function resolveWorkerArgs(args) {
+  const { repo, branch, worker_path, script_name } = args || {};
+
+  // All four present — pass through
+  if (repo && branch && worker_path && script_name) {
+    return { ...args };
+  }
+
+  // No script_name at all
+  if (!script_name) {
+    return {
+      ok: false,
+      error: "missing_fields",
+      required: ["script_name"],
+      optional_full_form: ["repo", "branch", "worker_path", "script_name"],
+      hint: "Provide at least ?script_name=afo-buttons-mcp. Known workers: " + Object.keys(DEFAULT_REGISTRY).join(", "),
+      known_workers: Object.keys(DEFAULT_REGISTRY)
+    };
+  }
+
+  // script_name present — look up in registry
+  const entry = DEFAULT_REGISTRY[script_name];
+  if (!entry) {
+    return {
+      ok: false,
+      error: "unknown_worker",
+      script_name,
+      hint: "This worker is not in the built-in registry. Provide full params (repo, branch, worker_path, script_name) or add it to DEFAULT_REGISTRY.",
+      known_workers: Object.keys(DEFAULT_REGISTRY)
+    };
+  }
+
+  // Merge registry entry with any caller-supplied overrides
+  return {
+    ...entry,
+    ...Object.fromEntries(
+      Object.entries(args).filter(([, v]) => v !== undefined && v !== null && v !== "")
+    )
+  };
+}
 
 // Integration targets (env-configured)
 // DEPLOY_MCP_URL  — afo-mobile-deploy-mcp base URL (with or without /mcp — normalised at runtime)
@@ -95,19 +178,24 @@ async function handleCmd(url, env) {
   // Write tools via GET → always return confirmation_required, never execute
   if (WRITE_TOOLS.has(toolName)) {
     if (toolName === "deploy_worker") {
+      // Resolve args first (may be script_name-only)
+      const resolved = resolveWorkerArgs(args);
+      if (resolved.ok === false) return resolved;
+
       // Run the preview directly (no writes) and embed it
-      const preview = await previewWorkerDeploy(args, env);
+      const preview = await previewWorkerDeploy(resolved, env);
       return {
         ok: false,
         error: "confirmation_required",
         via: "GET /cmd — writes disabled via GET",
         message: "GET /cmd route returns preview only. To deploy, POST to /mcp with confirmed:true.",
+        resolved_worker: resolved,
         post_example: {
           url: `${url.origin}/mcp`,
           method: "POST",
           body: {
             method: "tools/call",
-            params: { name: "deploy_worker", arguments: { ...args, confirmed: true } }
+            params: { name: "deploy_worker", arguments: { ...resolved, confirmed: true } }
           }
         },
         preview
@@ -132,29 +220,42 @@ async function handleCmd(url, env) {
     };
   }
 
-  // Read / preview tools → run directly
+  // Read / preview tools — resolve worker args where applicable, then run
+  const workerTools = new Set(["validate_worker", "preview_worker_deploy", "run_smoke_test", "list_recent_deploys", "open_worker_urls"]);
+  if (workerTools.has(toolName)) {
+    const resolved = resolveWorkerArgs(args);
+    if (resolved.ok === false) return resolved;
+    return dispatch(toolName, resolved, env);
+  }
+
   return dispatch(toolName, args, env);
 }
 
 function cmdHelp(origin) {
+  const knownWorkers = Object.keys(DEFAULT_REGISTRY);
   const examples = [
     { cmd: `GET ${origin}/cmd/list_command_belts`, description: "List all configured command belts + status" },
     { cmd: `GET ${origin}/cmd/list_registered_workers`, description: "List registered workers" },
-    { cmd: `GET ${origin}/cmd/open_worker_urls?script_name=afo-buttons-mcp`, description: "Get live URLs for a worker" },
-    { cmd: `GET ${origin}/cmd/validate_worker?repo=nothinginfinity/agent-bridge&branch=main&worker_path=workers/afo-buttons-mcp&script_name=afo-buttons-mcp`, description: "Validate a worker folder" },
-    { cmd: `GET ${origin}/cmd/preview_worker_deploy?repo=nothinginfinity/agent-bridge&branch=main&worker_path=workers/afo-buttons-mcp&script_name=afo-buttons-mcp`, description: "Preview a deploy (no writes)" },
-    { cmd: `GET ${origin}/cmd/run_smoke_test?script_name=afo-buttons-mcp`, description: "Smoke test a live worker" },
-    { cmd: `GET ${origin}/cmd/list_recent_deploys?repo=nothinginfinity/agent-bridge&script_name=afo-buttons-mcp`, description: "List recent deploy receipts" },
-    { cmd: `GET ${origin}/cmd/deploy_worker?repo=nothinginfinity/agent-bridge&branch=main&worker_path=workers/afo-buttons-mcp&script_name=afo-buttons-mcp`, description: "[READ-ONLY via GET] Returns valid deploy preview + confirm instructions" },
-    { cmd: `GET ${origin}/cmd/register_worker?script_name=afo-buttons-mcp&description=AFO+buttons+MCP`, description: "[READ-ONLY via GET] Returns registration preview + instructions" },
-    { cmd: `GET ${origin}/cmd/write_handoff?title=Handoff+title&to=alice&body=Work+done`, description: "[READ-ONLY via GET] Returns handoff preview + instructions" }
+    // script_name-only shortcuts
+    { cmd: `GET ${origin}/cmd/open_worker_urls?script_name=afo-buttons-mcp`, description: "Get live URLs — script_name only (auto-resolves)" },
+    { cmd: `GET ${origin}/cmd/validate_worker?script_name=afo-buttons-mcp`, description: "Validate — script_name only (auto-resolves)" },
+    { cmd: `GET ${origin}/cmd/preview_worker_deploy?script_name=afo-buttons-mcp`, description: "Preview deploy — script_name only (auto-resolves)" },
+    { cmd: `GET ${origin}/cmd/run_smoke_test?script_name=afo-buttons-mcp`, description: "Smoke test — script_name only (auto-resolves)" },
+    { cmd: `GET ${origin}/cmd/list_recent_deploys?script_name=afo-buttons-mcp`, description: "Recent deploys — script_name only (auto-resolves)" },
+    { cmd: `GET ${origin}/cmd/deploy_worker?script_name=afo-buttons-mcp`, description: "[PREVIEW ONLY via GET] Full preview + confirm instructions, script_name only" },
+    // full-form overrides
+    { cmd: `GET ${origin}/cmd/validate_worker?repo=nothinginfinity/agent-bridge&branch=main&worker_path=workers/afo-buttons-mcp&script_name=afo-buttons-mcp`, description: "Validate — full form (overrides registry)" },
+    { cmd: `GET ${origin}/cmd/deploy_worker?repo=nothinginfinity/agent-bridge&branch=main&worker_path=workers/afo-buttons-mcp&script_name=afo-buttons-mcp`, description: "[PREVIEW ONLY via GET] Full form" },
+    { cmd: `GET ${origin}/cmd/register_worker?script_name=afo-buttons-mcp&description=AFO+buttons+MCP`, description: "[PREVIEW ONLY via GET] Registration preview + confirm instructions" },
+    { cmd: `GET ${origin}/cmd/write_handoff?title=Handoff+title&to=alice&body=Work+done`, description: "[PREVIEW ONLY via GET] Handoff preview + confirm instructions" }
   ];
 
   return {
     ok: true,
     name: WORKER_NAME,
     version: VERSION,
-    description: "GET /cmd slash-command layer. Read and preview tools run immediately. Write tools return a preview and instructions to confirm via POST /mcp.",
+    description: "GET /cmd slash-command layer. script_name-only commands auto-resolve via built-in registry. Read and preview tools run immediately. Write tools return a preview and instructions to confirm via POST /mcp.",
+    known_workers: knownWorkers,
     routes: {
       help:  `GET ${origin}/cmd`,
       run:   `GET ${origin}/cmd/{tool_name}?param=value`,
@@ -218,14 +319,14 @@ async function listRegisteredWorkers(args, env) {
     const res = await safePost(`${trimSlash(env.REGISTRY_URL)}/mcp`, { method: "tools/call", params: { name: "list_workers", arguments: args } });
     if (res.http_ok) return { ok: true, source: "registry", workers: res.result?.workers || res.result || [] };
   }
-  const repo = args.repo || "nothinginfinity/agent-bridge";
-  const path = args.deployments_path || "shared/deployments";
-  return githubListContent(env, ...parseRepo(repo), path, args.branch || "main");
+  // Fallback: return built-in registry
+  const workers = Object.values(DEFAULT_REGISTRY);
+  return { ok: true, source: "built-in_registry", count: workers.length, workers };
 }
 
 async function openWorkerUrls(args, env) {
   const scriptName = args.script_name;
-  if (!scriptName) return { ok: false, error: "script_name required", hint: "Add ?script_name=your-worker-name" };
+  if (!scriptName) return { ok: false, error: "script_name required", hint: "Add ?script_name=your-worker-name", known_workers: Object.keys(DEFAULT_REGISTRY) };
   const subdomain = env.CF_WORKERS_SUBDOMAIN || "jaredtechfit";
   const base = args.custom_domain ? `https://${args.custom_domain}` : `https://${scriptName}.${subdomain}.workers.dev`;
   const urls = {
@@ -255,16 +356,21 @@ async function previewWorkerDeploy(args, env) {
 }
 
 async function deployWorker(args, env) {
-  if (!args.confirmed) {
-    const preview = await previewWorkerDeploy(args, env);
+  // Resolve script_name-only args before any gate
+  const resolved = resolveWorkerArgs(args);
+  if (resolved.ok === false) return resolved;
+
+  if (!resolved.confirmed) {
+    const preview = await previewWorkerDeploy(resolved, env);
     return {
       ok: false,
       error: "confirmation_required",
       message: "Review the preview and call deploy_worker again with confirmed:true to proceed.",
+      resolved_worker: resolved,
       preview
     };
   }
-  return proxyToDeployMcp("deploy_worker_from_github", args, env);
+  return proxyToDeployMcp("deploy_worker_from_github", resolved, env);
 }
 
 async function runSmokeTest(args, env) {
@@ -516,6 +622,7 @@ function healthPayload(env) {
     tools: TOOL_NAMES.length,
     cmd_layer: "enabled",
     deploy_mcp_endpoint: deployMcpEndpoint(env),
+    built_in_registry: Object.keys(DEFAULT_REGISTRY),
     integrations: {
       deploy_mcp:  env.DEPLOY_MCP_URL  ? "configured" : "default",
       registry:    env.REGISTRY_URL    ? "configured" : "not_configured",
@@ -538,36 +645,37 @@ function toolsList() {
 
 const DESCRIPTIONS = {
   list_command_belts:      "List all configured command belts and their live status (deploy-mcp, registry, handoff-mcp, cf-gateway).",
-  list_registered_workers: "List registered workers from registry or GitHub deployments folder.",
-  open_worker_urls:        "Return all live URLs for a given worker script_name (home, health, mcp, llms, tools, ui_contract).",
-  validate_worker:         "Validate a Worker folder structure and entrypoint in GitHub. Proxies to afo-mobile-deploy-mcp.",
-  preview_worker_deploy:   "Preview a deployment plan without writing to Cloudflare. Returns validation + URLs.",
-  deploy_worker:           "Deploy a Worker from GitHub to Cloudflare. Preview-first — requires confirmed:true to execute. GET /cmd returns preview only.",
-  run_smoke_test:          "Run smoke tests against a live Worker (health, mcp tools/list, llms.txt, optional custom paths).",
+  list_registered_workers: "List registered workers from registry or built-in DEFAULT_REGISTRY.",
+  open_worker_urls:        "Return all live URLs for a given worker script_name (home, health, mcp, llms, tools, ui_contract). Accepts script_name only — auto-resolves via built-in registry.",
+  validate_worker:         "Validate a Worker folder structure and entrypoint in GitHub. Accepts script_name only — auto-resolves via built-in registry. Proxies to afo-mobile-deploy-mcp.",
+  preview_worker_deploy:   "Preview a deployment plan without writing to Cloudflare. Accepts script_name only. Returns validation + URLs.",
+  deploy_worker:           "Deploy a Worker from GitHub to Cloudflare. Accepts script_name only. Preview-first — requires confirmed:true to execute. GET /cmd returns preview only.",
+  run_smoke_test:          "Run smoke tests against a live Worker (health, mcp tools/list, llms.txt, optional custom paths). Accepts script_name only.",
   list_recent_deploys:     "List recent deployment receipts from GitHub for a given worker or the default deployments folder.",
   register_worker:         "Register or update Worker metadata in the registry or GitHub. Requires confirmed:true to write. GET /cmd returns preview only.",
   write_handoff:           "Write a handoff note to the handoff MCP or GitHub shared/handoffs. Requires confirmed:true to write. GET /cmd returns preview only."
 };
 
 function llmsText(origin) {
-  return `# ${WORKER_NAME} v${VERSION}\n\nPurpose: Command-center layer above AFO MCP tools. Orchestrates deploy, smoke test, registry, handoff, and Cloudflare inventory for mobile-first workflows.\n\nBase URL: ${origin}\n\nRoutes:\n- GET /                             — Mobile terminal UI\n- GET /health                       — Health check (no secrets exposed)\n- GET /llms.txt\n- GET /tools/list\n- POST /mcp                         — MCP tool surface (canonical agent endpoint)\n- GET /contracts/ui-contract.json\n- GET /cmd                          — Slash-command help\n- GET /cmd/help                     — Slash-command help\n- GET /cmd/{tool_name}?param=value  — Run read/preview tool via browser/curl\n\nTools (${TOOL_NAMES.length}):\n${TOOL_NAMES.map(n => `- ${n}${WRITE_TOOLS.has(n) ? " [write — GET /cmd returns preview only]" : ""}`).join("\n")}\n\nIntegration targets:\n- afo-mobile-deploy-mcp (DEPLOY_MCP_URL env)   — POST to /mcp (normalised at runtime)\n- AFO registry           (REGISTRY_URL env)      — list/register workers\n- handoff-mcp            (HANDOFF_MCP_URL env)   — write handoffs\n- Cloudflare gateway     (CF_GATEWAY_URL env)    — inventory\n- GitHub                 (GITHUB_TOKEN env)       — source-of-truth, receipts, handoffs\n\nSecurity:\n- All write actions require confirmed:true via POST /mcp\n- GET /cmd never executes writes\n- No secrets exposed in /health, UI, logs, or receipts\n`;
+  return `# ${WORKER_NAME} v${VERSION}\n\nPurpose: Command-center layer above AFO MCP tools. Orchestrates deploy, smoke test, registry, handoff, and Cloudflare inventory for mobile-first workflows.\n\nBase URL: ${origin}\n\nRoutes:\n- GET /                             — Mobile terminal UI\n- GET /health                       — Health check (no secrets exposed)\n- GET /llms.txt\n- GET /tools/list\n- POST /mcp                         — MCP tool surface (canonical agent endpoint)\n- GET /contracts/ui-contract.json\n- GET /cmd                          — Slash-command help + known_workers list\n- GET /cmd/help                     — Slash-command help\n- GET /cmd/{tool_name}?script_name= — Run any tool with script_name only (auto-resolves)\n\nBuilt-in registry: ${Object.keys(DEFAULT_REGISTRY).join(", ")}\n\nTools (${TOOL_NAMES.length}):\n${TOOL_NAMES.map(n => `- ${n}${WRITE_TOOLS.has(n) ? " [write — GET /cmd returns preview only]" : ""}`).join("\n")}\n\nscript_name-only resolution:\n  All worker tools accept ?script_name=afo-buttons-mcp without requiring\n  repo, branch, or worker_path. The built-in DEFAULT_REGISTRY resolves these.\n  Unknown script_name returns unknown_worker (not a 404).\n\nIntegration targets:\n- afo-mobile-deploy-mcp (DEPLOY_MCP_URL env)   — POST to /mcp (normalised at runtime)\n- AFO registry           (REGISTRY_URL env)      — list/register workers\n- handoff-mcp            (HANDOFF_MCP_URL env)   — write handoffs\n- Cloudflare gateway     (CF_GATEWAY_URL env)    — inventory\n- GitHub                 (GITHUB_TOKEN env)       — source-of-truth, receipts, handoffs\n\nSecurity:\n- All write actions require confirmed:true via POST /mcp\n- GET /cmd never executes writes\n- No secrets exposed in /health, UI, logs, or receipts\n`;
 }
 
 function uiContract() {
   return {
     name: WORKER_NAME,
     version: VERSION,
+    known_workers: Object.keys(DEFAULT_REGISTRY),
     cards: [
-      { id: "deploy_worker",       label: "Deploy Worker",       tool: "deploy_worker",      inputs: ["repo","branch","worker_path","script_name"], confirm_required: true },
-      { id: "smoke_test",          label: "Smoke Test Worker",   tool: "run_smoke_test",     inputs: ["script_name","smoke_paths"] },
-      { id: "list_recent_deploys", label: "List Recent Deploys", tool: "list_recent_deploys",inputs: ["repo","script_name"] },
+      { id: "deploy_worker",       label: "Deploy Worker",       tool: "deploy_worker",      inputs: ["script_name","repo","branch","worker_path"], confirm_required: true, shortcut: "script_name only supported" },
+      { id: "smoke_test",          label: "Smoke Test Worker",   tool: "run_smoke_test",     inputs: ["script_name","smoke_paths"], shortcut: "script_name only supported" },
+      { id: "list_recent_deploys", label: "List Recent Deploys", tool: "list_recent_deploys",inputs: ["script_name","repo"] },
       { id: "register_worker",     label: "Register Worker",     tool: "register_worker",    inputs: ["script_name","description","tags"], confirm_required: true },
-      { id: "open_urls",           label: "Open Tool URLs",      tool: "open_worker_urls",   inputs: ["script_name","custom_domain"] },
+      { id: "open_urls",           label: "Open Tool URLs",      tool: "open_worker_urls",   inputs: ["script_name","custom_domain"], shortcut: "script_name only supported" },
       { id: "write_handoff",       label: "Write Handoff",       tool: "write_handoff",      inputs: ["title","from","to","project","body","next_steps"], confirm_required: true }
     ],
     cmd_layer: {
       help:    "https://afo-mobile-terminal-mcp.jaredtechfit.workers.dev/cmd",
-      pattern: "/cmd/{tool_name}?param=value",
+      pattern: "/cmd/{tool_name}?script_name=worker-name",
       write_tools_blocked_via_get: [...WRITE_TOOLS]
     }
   };
@@ -607,6 +715,7 @@ function indexHtml() {
     input, select, textarea { width: 100%; padding: 10px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 14px; transition: border-color var(--transition); }
     input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
     textarea { resize: vertical; min-height: 80px; }
+    .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
     .btn-row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
     button { flex: 1; min-width: 120px; padding: 11px 16px; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity var(--transition), transform var(--transition); }
     button:active { transform: scale(0.97); }
@@ -638,14 +747,15 @@ function indexHtml() {
   <p class="section-label">Worker Target</p>
   <div class="card">
     <h2><span class="icon">🎯</span> Target Worker</h2>
-    <label>Repo (owner/name)</label>
-    <input id="repo" value="nothinginfinity/agent-bridge">
-    <label>Branch</label>
-    <input id="branch" value="main">
-    <label>Worker Path</label>
+    <label>Script Name <span style="color:var(--accent2)">(required — auto-resolves known workers)</span></label>
+    <input id="script_name" placeholder="afo-buttons-mcp">
+    <p class="hint">Known: afo-buttons-mcp · afo-mobile-deploy-mcp · afo-mobile-terminal-mcp</p>
+    <label>Repo <span style="color:var(--muted)">(optional — filled from registry if blank)</span></label>
+    <input id="repo" placeholder="nothinginfinity/agent-bridge">
+    <label>Branch <span style="color:var(--muted)">(optional)</span></label>
+    <input id="branch" placeholder="main">
+    <label>Worker Path <span style="color:var(--muted)">(optional)</span></label>
     <input id="worker_path" placeholder="workers/my-worker">
-    <label>Script Name (Cloudflare)</label>
-    <input id="script_name" placeholder="my-worker">
   </div>
 
   <p class="section-label">Build Pipeline</p>
@@ -653,11 +763,11 @@ function indexHtml() {
   <div class="card">
     <h2><span class="icon">✅</span> Validate &amp; Preview <span class="cmd-badge" title="Copy GET /cmd URL" onclick="copyCmdUrl('validate_worker')">⌘ /cmd</span></h2>
     <div class="btn-row">
-      <button class="btn-secondary" onclick="callTool('validate_worker')">Validate Folder</button>
-      <button class="btn-secondary" onclick="callTool('preview_worker_deploy')">Preview Deploy</button>
+      <button class="btn-secondary" onclick="callTool('validate_worker', {}, 'out-validate')">Validate Folder</button>
+      <button class="btn-secondary" onclick="callTool('preview_worker_deploy', {}, 'out-validate')">Preview Deploy</button>
       <button class="btn-ghost" onclick="openCmd('validate_worker')">Open in browser</button>
     </div>
-    <div id="out-validate" class="output">Ready.</div>
+    <div id="out-validate" class="output">Enter script_name above then run.</div>
   </div>
 
   <div class="card">
@@ -690,16 +800,16 @@ function indexHtml() {
       <button class="btn-secondary" onclick="callOpenUrls()">Get Live URLs</button>
       <button class="btn-ghost" onclick="openCmd('open_worker_urls')">Open in browser</button>
     </div>
-    <div id="out-urls" class="output">Enter script name above.</div>
+    <div id="out-urls" class="output">Enter script_name above.</div>
   </div>
 
   <div class="card">
     <h2><span class="icon">📋</span> Recent Deploys <span class="cmd-badge" onclick="copyCmdUrl('list_recent_deploys')">⌘ /cmd</span></h2>
     <div class="btn-row">
-      <button class="btn-secondary" onclick="callTool('list_recent_deploys', null, 'out-receipts')">List Recent Deploys</button>
+      <button class="btn-secondary" onclick="callTool('list_recent_deploys', {}, 'out-receipts')">List Recent Deploys</button>
       <button class="btn-ghost" onclick="openCmd('list_recent_deploys')">Open in browser</button>
     </div>
-    <div id="out-receipts" class="output">Enter repo + script name above.</div>
+    <div id="out-receipts" class="output">Enter script_name above.</div>
   </div>
 
   <div class="card">
@@ -748,25 +858,24 @@ function indexHtml() {
 
 <script>
 function baseArgs() {
-  return {
-    repo: document.getElementById('repo').value,
-    branch: document.getElementById('branch').value,
-    worker_path: document.getElementById('worker_path').value,
-    script_name: document.getElementById('script_name').value
-  };
+  const a = { script_name: document.getElementById('script_name').value };
+  const repo = document.getElementById('repo').value;
+  const branch = document.getElementById('branch').value;
+  const worker_path = document.getElementById('worker_path').value;
+  if (repo) a.repo = repo;
+  if (branch) a.branch = branch;
+  if (worker_path) a.worker_path = worker_path;
+  return a;
 }
 
 function buildCmdUrl(toolName, extra = {}) {
   const args = { ...baseArgs(), ...extra };
   const params = new URLSearchParams();
-  for (const [k, v] of Object.entries(args)) if (v) params.set(k, v);
+  for (const [k, v] of Object.entries(args)) if (v) params.set(k, String(v));
   return '/cmd/' + toolName + '?' + params.toString();
 }
 
-function openCmd(toolName, extra = {}) {
-  window.open(buildCmdUrl(toolName, extra), '_blank');
-}
-
+function openCmd(toolName, extra = {}) { window.open(buildCmdUrl(toolName, extra), '_blank'); }
 function copyCmdUrl(toolName, extra = {}) {
   const url = location.origin + buildCmdUrl(toolName, extra);
   navigator.clipboard?.writeText(url).catch(() => {});
