@@ -1,4 +1,4 @@
-// afo-mobile-terminal-mcp v0.2.3
+// afo-mobile-terminal-mcp v0.2.4
 // Command-center layer above individual MCP tools.
 // Orchestrates: deploy, smoke test, registry, handoff, Cloudflare inventory.
 // All write actions are preview-first and confirmation-gated.
@@ -8,11 +8,14 @@
 // v0.2.1 — fix: unwrap safePost envelope in proxyToDeployMcp
 // v0.2.2 — fix: normalize DEPLOY_MCP_URL to always POST to /mcp
 // v0.2.3 — feat: script_name-only resolution via built-in DEFAULT_REGISTRY
-//           /cmd/deploy_worker?script_name=afo-buttons-mcp resolves to full
-//           { repo, branch, worker_path, script_name } without requiring all
-//           four params. Unknown script_name returns unknown_worker (not 404).
+// v0.2.4 — feat: /diag diagnostic layer + /diag/fetch direct fetch test
+//           GET /diag               — full env + integration health report
+//           GET /diag/fetch?url=... — direct fetch probe to isolate 404 origin
+//           GET /diag/deploy-mcp    — targeted deploy-mcp connectivity + 404 diagnosis
+//           GET /diag/routes        — route map with expected vs observed status
+//           GET /diag/env           — safe env binding inventory (no secret values)
 
-const VERSION = "0.2.3";
+const VERSION = "0.2.4";
 const WORKER_NAME = "afo-mobile-terminal-mcp";
 
 const TOOL_NAMES = [
@@ -28,13 +31,9 @@ const TOOL_NAMES = [
   "write_handoff"
 ];
 
-// Write tools: GET /cmd will never execute these — always returns confirmation_required.
 const WRITE_TOOLS = new Set(["deploy_worker", "register_worker", "write_handoff"]);
 
 // ─── Built-in default registry ────────────────────────────────────────────────
-// Maps script_name → canonical worker descriptor.
-// This is the source-of-truth when no external REGISTRY_URL is configured.
-// Add new workers here as they are deployed.
 const DEFAULT_REGISTRY = {
   "afo-buttons-mcp": {
     script_name:  "afo-buttons-mcp",
@@ -62,27 +61,9 @@ const DEFAULT_REGISTRY = {
   }
 };
 
-/**
- * Resolve args into a full worker descriptor.
- *
- * Priority:
- *   1. If all four fields are already present, pass through as-is.
- *   2. If only script_name is given, look it up in DEFAULT_REGISTRY.
- *   3. If script_name is missing entirely, return a missing_fields error.
- *   4. If script_name is present but not in DEFAULT_REGISTRY, return unknown_worker.
- *
- * Always returns either a full descriptor object or an error object
- * (error objects have ok:false).
- */
 function resolveWorkerArgs(args) {
   const { repo, branch, worker_path, script_name } = args || {};
-
-  // All four present — pass through
-  if (repo && branch && worker_path && script_name) {
-    return { ...args };
-  }
-
-  // No script_name at all
+  if (repo && branch && worker_path && script_name) return { ...args };
   if (!script_name) {
     return {
       ok: false,
@@ -93,20 +74,16 @@ function resolveWorkerArgs(args) {
       known_workers: Object.keys(DEFAULT_REGISTRY)
     };
   }
-
-  // script_name present — look up in registry
   const entry = DEFAULT_REGISTRY[script_name];
   if (!entry) {
     return {
       ok: false,
       error: "unknown_worker",
       script_name,
-      hint: "This worker is not in the built-in registry. Provide full params (repo, branch, worker_path, script_name) or add it to DEFAULT_REGISTRY.",
+      hint: "Not in built-in registry. Provide full params or add to DEFAULT_REGISTRY.",
       known_workers: Object.keys(DEFAULT_REGISTRY)
     };
   }
-
-  // Merge registry entry with any caller-supplied overrides
   return {
     ...entry,
     ...Object.fromEntries(
@@ -114,16 +91,6 @@ function resolveWorkerArgs(args) {
     )
   };
 }
-
-// Integration targets (env-configured)
-// DEPLOY_MCP_URL  — afo-mobile-deploy-mcp base URL (with or without /mcp — normalised at runtime)
-// REGISTRY_URL    — AFO Tool Index / registry if available
-// HANDOFF_MCP_URL — Message OS / handoff inbox if available
-// CF_GATEWAY_URL  — Cloudflare infra gateway if available
-// GITHUB_TOKEN    — GitHub repo source-of-truth
-// CF_ACCOUNT_ID   — Cloudflare account (write actions only)
-// CF_API_TOKEN    — Cloudflare API token (write actions only)
-// CF_WORKERS_SUBDOMAIN — workers.dev subdomain
 
 export default {
   async fetch(request, env) {
@@ -144,6 +111,13 @@ export default {
       if (request.method === "GET" && url.pathname === "/cmd/help")    return jsonRes(cmdHelp(url.origin));
       if (request.method === "GET" && url.pathname.startsWith("/cmd/")) return jsonRes(await handleCmd(url, env));
 
+      // ── /diag diagnostic layer ───────────────────────────────────────────
+      if (request.method === "GET" && (url.pathname === "/diag" || url.pathname === "/diag/")) return jsonRes(await diagFull(url, env));
+      if (request.method === "GET" && url.pathname === "/diag/env")    return jsonRes(diagEnv(env));
+      if (request.method === "GET" && url.pathname === "/diag/routes") return jsonRes(await diagRoutes(url.origin, env));
+      if (request.method === "GET" && url.pathname === "/diag/deploy-mcp") return jsonRes(await diagDeployMcp(env));
+      if (request.method === "GET" && url.pathname === "/diag/fetch")  return jsonRes(await diagFetch(url, env));
+
       return jsonRes({ ok: false, error: "not_found", path: url.pathname }, 404);
     } catch (err) {
       return jsonRes({ ok: false, error: "internal_error", message: String(err?.message || err) }, 500);
@@ -151,11 +125,425 @@ export default {
   }
 };
 
+// ─── /diag handlers ───────────────────────────────────────────────────────────
+
+/**
+ * GET /diag
+ * Full diagnostic snapshot: env inventory + deploy-mcp reachability +
+ * route health + known worker URL checks.
+ */
+async function diagFull(url, env) {
+  const [envInfo, deployMcpInfo, routesInfo] = await Promise.all([
+    Promise.resolve(diagEnv(env)),
+    diagDeployMcp(env),
+    diagRoutes(url.origin, env)
+  ]);
+
+  // Live URL check for each known worker
+  const workerChecks = await Promise.all(
+    Object.values(DEFAULT_REGISTRY).map(async (w) => {
+      const subdomain = env.CF_WORKERS_SUBDOMAIN || "jaredtechfit";
+      const base = `https://${w.script_name}.${subdomain}.workers.dev`;
+      const [homeCheck, healthCheck, mcpCheck] = await Promise.all([
+        fetchProbe(base + "/"),
+        fetchProbe(base + "/health"),
+        fetchProbe(base + "/tools/list")
+      ]);
+      return {
+        script_name: w.script_name,
+        base,
+        home:    homeCheck,
+        health:  healthCheck,
+        tools:   mcpCheck
+      };
+    })
+  );
+
+  return {
+    ok: true,
+    version: VERSION,
+    worker: WORKER_NAME,
+    generated_at: new Date().toISOString(),
+    env: envInfo,
+    deploy_mcp: deployMcpInfo,
+    routes: routesInfo,
+    known_workers: workerChecks,
+    diag_routes: {
+      full:        `${url.origin}/diag`,
+      env:         `${url.origin}/diag/env`,
+      routes:      `${url.origin}/diag/routes`,
+      deploy_mcp:  `${url.origin}/diag/deploy-mcp`,
+      fetch:       `${url.origin}/diag/fetch?url=https://example.com/`
+    }
+  };
+}
+
+/**
+ * GET /diag/env
+ * Safe env binding inventory — reports which bindings are set, never their values.
+ */
+function diagEnv(env) {
+  const bindings = {
+    DEPLOY_MCP_URL:       envStatus(env.DEPLOY_MCP_URL),
+    REGISTRY_URL:         envStatus(env.REGISTRY_URL),
+    HANDOFF_MCP_URL:      envStatus(env.HANDOFF_MCP_URL),
+    CF_GATEWAY_URL:       envStatus(env.CF_GATEWAY_URL),
+    CF_WORKERS_SUBDOMAIN: envStatus(env.CF_WORKERS_SUBDOMAIN),
+    GITHUB_TOKEN:         envSecret(env.GITHUB_TOKEN),
+    CF_ACCOUNT_ID:        envSecret(env.CF_ACCOUNT_ID),
+    CF_API_TOKEN:         envSecret(env.CF_API_TOKEN),
+    TERMINAL_SELF_URL:    envStatus(env.TERMINAL_SELF_URL)
+  };
+
+  const missing = Object.entries(bindings).filter(([, v]) => v.status === "missing").map(([k]) => k);
+  const configured = Object.entries(bindings).filter(([, v]) => v.status !== "missing").map(([k]) => k);
+
+  return {
+    ok: true,
+    bindings,
+    configured,
+    missing,
+    computed: {
+      deploy_mcp_endpoint: deployMcpEndpoint(env),
+      workers_subdomain: env.CF_WORKERS_SUBDOMAIN || "jaredtechfit (default)"
+    }
+  };
+}
+
+function envStatus(val) {
+  if (!val) return { status: "missing" };
+  return { status: "set", value: val };   // URL bindings are not secret; expose for diagnostics
+}
+
+function envSecret(val) {
+  if (!val) return { status: "missing" };
+  const len = String(val).length;
+  return { status: "set", length: len, hint: `${String(val).slice(0, 4)}...` };
+}
+
+/**
+ * GET /diag/routes
+ * Probes all standard routes on self and reports expected vs observed status codes.
+ * Helps confirm routing is wired correctly after a fresh deploy.
+ */
+async function diagRoutes(origin, env) {
+  const routes = [
+    { method: "GET",  path: "/",                      expect: 200 },
+    { method: "GET",  path: "/health",                expect: 200 },
+    { method: "GET",  path: "/llms.txt",              expect: 200 },
+    { method: "GET",  path: "/tools/list",            expect: 200 },
+    { method: "GET",  path: "/ui-contract.json",      expect: 200 },
+    { method: "GET",  path: "/contracts/ui-contract.json", expect: 200 },
+    { method: "GET",  path: "/cmd",                   expect: 200 },
+    { method: "GET",  path: "/cmd/help",              expect: 200 },
+    { method: "GET",  path: "/cmd/list_registered_workers", expect: 200 },
+    { method: "GET",  path: "/diag",                  expect: 200 },
+    { method: "GET",  path: "/diag/env",              expect: 200 },
+    { method: "GET",  path: "/does-not-exist",        expect: 404 }
+  ];
+
+  const results = await Promise.all(
+    routes.map(async (r) => {
+      const probe = await fetchProbe(`${origin}${r.path}`, r.method);
+      return {
+        method: r.method,
+        path: r.path,
+        expected: r.expect,
+        observed: probe.status,
+        pass: probe.status === r.expect,
+        latency_ms: probe.latency_ms,
+        error: probe.error || undefined
+      };
+    })
+  );
+
+  const passed = results.filter(r => r.pass).length;
+  const failed = results.filter(r => !r.pass).length;
+
+  return {
+    ok: failed === 0,
+    summary: `${passed}/${results.length} routes pass`,
+    passed,
+    failed,
+    results
+  };
+}
+
+/**
+ * GET /diag/deploy-mcp
+ * Targeted connectivity + 404 diagnosis for afo-mobile-deploy-mcp.
+ * Tests: base URL, /health, /tools/list, /mcp (POST tools/list), /mcp (POST validate_worker_folder).
+ * Reports exact HTTP status, headers, and first 500 chars of body at each step
+ * so we can see exactly where a 404 originates.
+ */
+async function diagDeployMcp(env) {
+  const base = trimSlash(env.DEPLOY_MCP_URL || "https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev");
+  const mcpEndpoint = base.endsWith("/mcp") ? base : `${base}/mcp`;
+
+  const t0 = Date.now();
+
+  // Step 1: base /
+  const homeProbe = await fetchProbeVerbose(base + "/");
+
+  // Step 2: /health
+  const healthProbe = await fetchProbeVerbose(base + "/health");
+
+  // Step 3: /tools/list
+  const toolsProbe = await fetchProbeVerbose(base + "/tools/list");
+
+  // Step 4: POST /mcp — tools/list (should always work if Worker is up)
+  const mcpListProbe = await fetchProbeVerbosePost(mcpEndpoint, {
+    method: "tools/list"
+  });
+
+  // Step 5: POST /mcp — validate_worker_folder (real tool call)
+  const mcpValidateProbe = await fetchProbeVerbosePost(mcpEndpoint, {
+    method: "tools/call",
+    params: {
+      name: "validate_worker_folder",
+      arguments: {
+        repo: "nothinginfinity/agent-bridge",
+        branch: "main",
+        worker_path: "workers/afo-buttons-mcp",
+        script_name: "afo-buttons-mcp"
+      }
+    }
+  });
+
+  const elapsed = Date.now() - t0;
+
+  // ── 404 origin analysis ──────────────────────────────────────────────────
+  const fourOhFours = [];
+  const steps = { homeProbe, healthProbe, toolsProbe, mcpListProbe, mcpValidateProbe };
+  for (const [name, probe] of Object.entries(steps)) {
+    if (probe.status === 404) fourOhFours.push({ step: name, url: probe.url, body_preview: probe.body_preview });
+  }
+
+  const diagnosis = fourOhFours.length === 0
+    ? { ok: true, message: "No 404s detected across all deploy-mcp probe steps." }
+    : {
+        ok: false,
+        message: `404 detected at ${fourOhFours.length} step(s). See 404_sources below.`,
+        "404_sources": fourOhFours,
+        likely_causes: [
+          "Worker not deployed or route not published to workers.dev subdomain",
+          "DEPLOY_MCP_URL env binding points to wrong hostname or path",
+          "Worker is deployed but the requested path/tool is not wired in the Worker router",
+          "Cloudflare subdomain not enabled for the Worker script (check wrangler.toml: workers_dev = true)"
+        ]
+      };
+
+  return {
+    ok: fourOhFours.length === 0,
+    base,
+    mcp_endpoint: mcpEndpoint,
+    elapsed_ms: elapsed,
+    steps: {
+      "1_home":              homeProbe,
+      "2_health":            healthProbe,
+      "3_tools_list":        toolsProbe,
+      "4_mcp_list":          mcpListProbe,
+      "5_mcp_validate":      mcpValidateProbe
+    },
+    diagnosis
+  };
+}
+
+/**
+ * GET /diag/fetch?url=<url>[&method=GET|POST][&body=<json>]
+ *
+ * Direct fetch probe to any URL the caller specifies.
+ * Returns status, headers, and body preview — enough to see where a 404
+ * originates without needing a separate HTTP client.
+ *
+ * Use to isolate: is the 404 coming from Cloudflare edge, the Worker,
+ * a downstream MCP, or GitHub?
+ *
+ * Example:
+ *   GET /diag/fetch?url=https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/health
+ *   GET /diag/fetch?url=https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/mcp&method=POST&body={"method":"tools/list"}
+ */
+async function diagFetch(url, env) {
+  const targetUrl = url.searchParams.get("url");
+  if (!targetUrl) {
+    return {
+      ok: false,
+      error: "missing_url_param",
+      usage: "/diag/fetch?url=https://target.workers.dev/path",
+      examples: [
+        "/diag/fetch?url=https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/",
+        "/diag/fetch?url=https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/health",
+        "/diag/fetch?url=https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/tools/list",
+        "/diag/fetch?url=https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/mcp&method=POST&body=%7B%22method%22%3A%22tools%2Flist%22%7D"
+      ]
+    };
+  }
+
+  const method = (url.searchParams.get("method") || "GET").toUpperCase();
+  const bodyParam = url.searchParams.get("body");
+
+  let parsedBody = undefined;
+  if (bodyParam) {
+    try { parsedBody = JSON.parse(bodyParam); }
+    catch { parsedBody = bodyParam; }
+  }
+
+  const probe = method === "POST" && parsedBody !== undefined
+    ? await fetchProbeVerbosePost(targetUrl, parsedBody)
+    : await fetchProbeVerbose(targetUrl, method);
+
+  // ── 404 origin analysis ──────────────────────────────────────────────────
+  let origin_analysis = null;
+  if (probe.status === 404) {
+    const body = probe.body_preview || "";
+    let source = "unknown";
+    let detail = "";
+
+    if (body.includes("workers.dev") && (body.includes("error") || body.toLowerCase().includes("not found"))) {
+      source = "cloudflare_edge";
+      detail = "Cloudflare returned 404 before the Worker ran — Worker may not be deployed or subdomain not enabled.";
+    } else if (body.includes("not_found") || body.includes("\"path\"")) {
+      source = "worker_router";
+      detail = "Worker ran but its router returned 404 — path is not handled in the Worker's fetch handler.";
+    } else if (body.includes("\"error\"") && body.includes("tool")) {
+      source = "mcp_tool_dispatch";
+      detail = "Worker ran and MCP dispatcher returned 404 — tool name not found in TOOL_NAMES list.";
+    } else if (body.toLowerCase().includes("not found") || body.trim() === "") {
+      source = "likely_cloudflare_edge_or_worker_router";
+      detail = "Empty or generic 'not found' body — Worker may not be deployed, or path is unrouted.";
+    }
+
+    origin_analysis = {
+      "404_origin": source,
+      detail,
+      raw_body_preview: body,
+      response_headers: probe.response_headers,
+      likely_causes: [
+        "Worker not deployed (run: wrangler deploy)",
+        "workers_dev = false in wrangler.toml",
+        "Route not defined in the Worker's fetch handler",
+        "Wrong URL — check DEPLOY_MCP_URL env binding",
+        "MCP tool name mismatch — check tools/list"
+      ]
+    };
+  }
+
+  return {
+    ok: probe.status >= 200 && probe.status < 300,
+    target_url: targetUrl,
+    method,
+    ...probe,
+    origin_analysis
+  };
+}
+
+// ─── Verbose fetch probes ──────────────────────────────────────────────────────
+
+/**
+ * fetchProbeVerbose — GET (or any method) a URL and return full diagnostic details.
+ * Captures: status, latency, response headers, first 500 chars of body.
+ */
+async function fetchProbeVerbose(url, method = "GET") {
+  const start = Date.now();
+  try {
+    const r = await fetch(url, {
+      method,
+      headers: { "user-agent": `${WORKER_NAME}/${VERSION} diag` },
+      signal: AbortSignal.timeout(10000)
+    });
+    const text = await r.text().catch(() => "");
+    const latency = Date.now() - start;
+    const headers = {};
+    r.headers.forEach((v, k) => { headers[k] = v; });
+    return {
+      url,
+      method,
+      status: r.status,
+      ok: r.ok,
+      latency_ms: latency,
+      response_headers: headers,
+      body_preview: text.slice(0, 500),
+      body_length: text.length
+    };
+  } catch (err) {
+    return {
+      url,
+      method,
+      status: 0,
+      ok: false,
+      latency_ms: Date.now() - start,
+      error: String(err?.message || err),
+      body_preview: ""
+    };
+  }
+}
+
+/**
+ * fetchProbeVerbosePost — POST JSON to a URL and return full diagnostic details.
+ */
+async function fetchProbeVerbosePost(url, body) {
+  const start = Date.now();
+  try {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "user-agent": `${WORKER_NAME}/${VERSION} diag`
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15000)
+    });
+    const text = await r.text().catch(() => "");
+    const latency = Date.now() - start;
+    const headers = {};
+    r.headers.forEach((v, k) => { headers[k] = v; });
+    return {
+      url,
+      method: "POST",
+      request_body: body,
+      status: r.status,
+      ok: r.ok,
+      latency_ms: latency,
+      response_headers: headers,
+      body_preview: text.slice(0, 500),
+      body_length: text.length
+    };
+  } catch (err) {
+    return {
+      url,
+      method: "POST",
+      request_body: body,
+      status: 0,
+      ok: false,
+      latency_ms: Date.now() - start,
+      error: String(err?.message || err),
+      body_preview: ""
+    };
+  }
+}
+
+/**
+ * fetchProbe — lightweight probe (status + latency only, no headers/body).
+ * Used in diagFull for the known-worker grid.
+ */
+async function fetchProbe(url, method = "GET") {
+  const start = Date.now();
+  try {
+    const r = await fetch(url, {
+      method,
+      signal: AbortSignal.timeout(8000),
+      headers: { "user-agent": `${WORKER_NAME}/${VERSION} diag` }
+    });
+    return { url, status: r.status, ok: r.ok, latency_ms: Date.now() - start };
+  } catch (err) {
+    return { url, status: 0, ok: false, latency_ms: Date.now() - start, error: String(err?.message || err) };
+  }
+}
+
 // ─── /cmd handler ─────────────────────────────────────────────────────────────
 
 async function handleCmd(url, env) {
   const toolName = url.pathname.replace(/^\/cmd\//, "").split("/")[0];
-
   if (!toolName) return cmdHelp(url.origin);
   if (!TOOL_NAMES.includes(toolName)) {
     return {
@@ -167,7 +555,6 @@ async function handleCmd(url, env) {
     };
   }
 
-  // Parse query params into args object
   const args = {};
   for (const [k, v] of url.searchParams.entries()) {
     if (v === "true")       args[k] = true;
@@ -175,14 +562,10 @@ async function handleCmd(url, env) {
     else                    args[k] = v;
   }
 
-  // Write tools via GET → always return confirmation_required, never execute
   if (WRITE_TOOLS.has(toolName)) {
     if (toolName === "deploy_worker") {
-      // Resolve args first (may be script_name-only)
       const resolved = resolveWorkerArgs(args);
       if (resolved.ok === false) return resolved;
-
-      // Run the preview directly (no writes) and embed it
       const preview = await previewWorkerDeploy(resolved, env);
       return {
         ok: false,
@@ -193,10 +576,7 @@ async function handleCmd(url, env) {
         post_example: {
           url: `${url.origin}/mcp`,
           method: "POST",
-          body: {
-            method: "tools/call",
-            params: { name: "deploy_worker", arguments: { ...resolved, confirmed: true } }
-          }
+          body: { method: "tools/call", params: { name: "deploy_worker", arguments: { ...resolved, confirmed: true } } }
         },
         preview
       };
@@ -210,7 +590,6 @@ async function handleCmd(url, env) {
         preview: buildRegistrationPayload(args, env)
       };
     }
-    // write_handoff
     return {
       ok: false,
       error: "confirmation_required",
@@ -220,7 +599,6 @@ async function handleCmd(url, env) {
     };
   }
 
-  // Read / preview tools — resolve worker args where applicable, then run
   const workerTools = new Set(["validate_worker", "preview_worker_deploy", "run_smoke_test", "list_recent_deploys", "open_worker_urls"]);
   if (workerTools.has(toolName)) {
     const resolved = resolveWorkerArgs(args);
@@ -236,31 +614,29 @@ function cmdHelp(origin) {
   const examples = [
     { cmd: `GET ${origin}/cmd/list_command_belts`, description: "List all configured command belts + status" },
     { cmd: `GET ${origin}/cmd/list_registered_workers`, description: "List registered workers" },
-    // script_name-only shortcuts
-    { cmd: `GET ${origin}/cmd/open_worker_urls?script_name=afo-buttons-mcp`, description: "Get live URLs — script_name only (auto-resolves)" },
-    { cmd: `GET ${origin}/cmd/validate_worker?script_name=afo-buttons-mcp`, description: "Validate — script_name only (auto-resolves)" },
-    { cmd: `GET ${origin}/cmd/preview_worker_deploy?script_name=afo-buttons-mcp`, description: "Preview deploy — script_name only (auto-resolves)" },
-    { cmd: `GET ${origin}/cmd/run_smoke_test?script_name=afo-buttons-mcp`, description: "Smoke test — script_name only (auto-resolves)" },
-    { cmd: `GET ${origin}/cmd/list_recent_deploys?script_name=afo-buttons-mcp`, description: "Recent deploys — script_name only (auto-resolves)" },
-    { cmd: `GET ${origin}/cmd/deploy_worker?script_name=afo-buttons-mcp`, description: "[PREVIEW ONLY via GET] Full preview + confirm instructions, script_name only" },
-    // full-form overrides
-    { cmd: `GET ${origin}/cmd/validate_worker?repo=nothinginfinity/agent-bridge&branch=main&worker_path=workers/afo-buttons-mcp&script_name=afo-buttons-mcp`, description: "Validate — full form (overrides registry)" },
-    { cmd: `GET ${origin}/cmd/deploy_worker?repo=nothinginfinity/agent-bridge&branch=main&worker_path=workers/afo-buttons-mcp&script_name=afo-buttons-mcp`, description: "[PREVIEW ONLY via GET] Full form" },
-    { cmd: `GET ${origin}/cmd/register_worker?script_name=afo-buttons-mcp&description=AFO+buttons+MCP`, description: "[PREVIEW ONLY via GET] Registration preview + confirm instructions" },
-    { cmd: `GET ${origin}/cmd/write_handoff?title=Handoff+title&to=alice&body=Work+done`, description: "[PREVIEW ONLY via GET] Handoff preview + confirm instructions" }
+    { cmd: `GET ${origin}/cmd/open_worker_urls?script_name=afo-buttons-mcp`, description: "Get live URLs — script_name only" },
+    { cmd: `GET ${origin}/cmd/validate_worker?script_name=afo-buttons-mcp`, description: "Validate — script_name only" },
+    { cmd: `GET ${origin}/cmd/preview_worker_deploy?script_name=afo-buttons-mcp`, description: "Preview deploy" },
+    { cmd: `GET ${origin}/cmd/run_smoke_test?script_name=afo-buttons-mcp`, description: "Smoke test" },
+    { cmd: `GET ${origin}/cmd/list_recent_deploys?script_name=afo-buttons-mcp`, description: "Recent deploys" },
+    { cmd: `GET ${origin}/cmd/deploy_worker?script_name=afo-buttons-mcp`, description: "[PREVIEW ONLY via GET]" },
+    { cmd: `GET ${origin}/diag`, description: "Full diagnostic snapshot (v0.2.4+)" },
+    { cmd: `GET ${origin}/diag/deploy-mcp`, description: "Deploy-mcp 404 origin analysis" },
+    { cmd: `GET ${origin}/diag/fetch?url=https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/health`, description: "Direct fetch probe" }
   ];
-
   return {
     ok: true,
     name: WORKER_NAME,
     version: VERSION,
-    description: "GET /cmd slash-command layer. script_name-only commands auto-resolve via built-in registry. Read and preview tools run immediately. Write tools return a preview and instructions to confirm via POST /mcp.",
+    description: "GET /cmd slash-command layer. script_name-only commands auto-resolve. Diagnostic layer at /diag (v0.2.4+).",
     known_workers: knownWorkers,
     routes: {
-      help:  `GET ${origin}/cmd`,
-      run:   `GET ${origin}/cmd/{tool_name}?param=value`,
-      tools: `GET ${origin}/tools/list`,
-      mcp:   `POST ${origin}/mcp  (canonical agent endpoint)`
+      help:       `GET ${origin}/cmd`,
+      run:        `GET ${origin}/cmd/{tool_name}?param=value`,
+      tools:      `GET ${origin}/tools/list`,
+      mcp:        `POST ${origin}/mcp`,
+      diag:       `GET ${origin}/diag`,
+      diag_fetch: `GET ${origin}/diag/fetch?url=<target>`
     },
     safety: {
       read_tools:    TOOL_NAMES.filter(n => !WRITE_TOOLS.has(n)),
@@ -319,7 +695,6 @@ async function listRegisteredWorkers(args, env) {
     const res = await safePost(`${trimSlash(env.REGISTRY_URL)}/mcp`, { method: "tools/call", params: { name: "list_workers", arguments: args } });
     if (res.http_ok) return { ok: true, source: "registry", workers: res.result?.workers || res.result || [] };
   }
-  // Fallback: return built-in registry
   const workers = Object.values(DEFAULT_REGISTRY);
   return { ok: true, source: "built-in_registry", count: workers.length, workers };
 }
@@ -356,10 +731,8 @@ async function previewWorkerDeploy(args, env) {
 }
 
 async function deployWorker(args, env) {
-  // Resolve script_name-only args before any gate
   const resolved = resolveWorkerArgs(args);
   if (resolved.ok === false) return resolved;
-
   if (!resolved.confirmed) {
     const preview = await previewWorkerDeploy(resolved, env);
     return {
@@ -431,26 +804,13 @@ async function writeHandoff(args, env) {
   return { ok: put.ok, source: "github", path, status: put.status, note };
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Proxy + helpers ──────────────────────────────────────────────────────────
 
-/**
- * Normalise DEPLOY_MCP_URL so we always POST to the /mcp endpoint.
- *
- * Accepts any of these inputs and always returns the /mcp endpoint URL:
- *   https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev          → .../mcp
- *   https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/         → .../mcp
- *   https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/mcp      → .../mcp  (no-op)
- *   https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/mcp/     → .../mcp  (no-op)
- */
 function deployMcpEndpoint(env) {
   const base = trimSlash(env.DEPLOY_MCP_URL || "https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev");
   return base.endsWith("/mcp") ? base : `${base}/mcp`;
 }
 
-/**
- * Proxy a tool call to afo-mobile-deploy-mcp and return the UNWRAPPED
- * tool result (the JSON the deploy-mcp returned), not the fetch envelope.
- */
 async function proxyToDeployMcp(toolName, args, env) {
   const endpoint = deployMcpEndpoint(env);
   const envelope = await safePost(endpoint, {
@@ -464,7 +824,8 @@ async function proxyToDeployMcp(toolName, args, env) {
       error: "deploy_mcp_unreachable",
       deploy_mcp_endpoint: endpoint,
       tool: toolName,
-      detail: envelope.error || `HTTP ${envelope.status}`
+      detail: envelope.error || `HTTP ${envelope.status}`,
+      diag_hint: `Run GET /diag/deploy-mcp or GET /diag/fetch?url=${encodeURIComponent(endpoint)} to diagnose.`
     };
   }
 
@@ -475,7 +836,8 @@ async function proxyToDeployMcp(toolName, args, env) {
       deploy_mcp_endpoint: endpoint,
       tool: toolName,
       http_status: envelope.status,
-      result: envelope.result
+      result: envelope.result,
+      diag_hint: `Run GET /diag/deploy-mcp to see step-by-step 404 origin analysis.`
     };
   }
 
@@ -536,11 +898,6 @@ async function httpOk(url) {
   try { const r = await fetch(url, { signal: AbortSignal.timeout(5000) }); return r.ok; } catch { return false; }
 }
 
-/**
- * safePost — returns { http_ok, status, result } envelope.
- * http_ok = true means the HTTP request itself succeeded (2xx).
- * result  = parsed JSON body from the server.
- */
 async function safePost(url, body) {
   try {
     const r = await fetch(url, {
@@ -554,20 +911,6 @@ async function safePost(url, body) {
   } catch (err) {
     return { http_ok: false, status: 0, error: String(err?.message || err), result: {} };
   }
-}
-
-async function githubListContent(env, owner, repo, path, ref) {
-  if (!env.GITHUB_TOKEN) return { ok: false, error: "missing_GITHUB_TOKEN" };
-  const res = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/contents/${encodePath(path)}?ref=${encodeURIComponent(ref || "main")}`,
-    { headers: githubHeaders(env) }
-  );
-  const body = await safeJson(res);
-  return {
-    ok: res.ok, status: res.status, path,
-    items: Array.isArray(body) ? body.map(x => ({ name: x.name, path: x.path, type: x.type, size: x.size, sha: x.sha, url: x.html_url })) : [],
-    error: res.ok ? undefined : body
-  };
 }
 
 async function githubPutContent(env, owner, repo, path, branch, data) {
@@ -621,6 +964,7 @@ function healthPayload(env) {
     version: VERSION,
     tools: TOOL_NAMES.length,
     cmd_layer: "enabled",
+    diag_layer: "enabled",
     deploy_mcp_endpoint: deployMcpEndpoint(env),
     built_in_registry: Object.keys(DEFAULT_REGISTRY),
     integrations: {
@@ -629,6 +973,13 @@ function healthPayload(env) {
       handoff_mcp: env.HANDOFF_MCP_URL ? "configured" : "not_configured",
       cf_gateway:  env.CF_GATEWAY_URL  ? "configured" : "not_configured",
       github:      env.GITHUB_TOKEN    ? "configured" : "not_configured"
+    },
+    diag_urls: {
+      full:       "/diag",
+      env:        "/diag/env",
+      routes:     "/diag/routes",
+      deploy_mcp: "/diag/deploy-mcp",
+      fetch:      "/diag/fetch?url=<target>"
     }
   };
 }
@@ -644,20 +995,20 @@ function toolsList() {
 }
 
 const DESCRIPTIONS = {
-  list_command_belts:      "List all configured command belts and their live status (deploy-mcp, registry, handoff-mcp, cf-gateway).",
+  list_command_belts:      "List all configured command belts and their live status.",
   list_registered_workers: "List registered workers from registry or built-in DEFAULT_REGISTRY.",
-  open_worker_urls:        "Return all live URLs for a given worker script_name (home, health, mcp, llms, tools, ui_contract). Accepts script_name only — auto-resolves via built-in registry.",
-  validate_worker:         "Validate a Worker folder structure and entrypoint in GitHub. Accepts script_name only — auto-resolves via built-in registry. Proxies to afo-mobile-deploy-mcp.",
-  preview_worker_deploy:   "Preview a deployment plan without writing to Cloudflare. Accepts script_name only. Returns validation + URLs.",
-  deploy_worker:           "Deploy a Worker from GitHub to Cloudflare. Accepts script_name only. Preview-first — requires confirmed:true to execute. GET /cmd returns preview only.",
-  run_smoke_test:          "Run smoke tests against a live Worker (health, mcp tools/list, llms.txt, optional custom paths). Accepts script_name only.",
-  list_recent_deploys:     "List recent deployment receipts from GitHub for a given worker or the default deployments folder.",
-  register_worker:         "Register or update Worker metadata in the registry or GitHub. Requires confirmed:true to write. GET /cmd returns preview only.",
-  write_handoff:           "Write a handoff note to the handoff MCP or GitHub shared/handoffs. Requires confirmed:true to write. GET /cmd returns preview only."
+  open_worker_urls:        "Return all live URLs for a given worker script_name.",
+  validate_worker:         "Validate a Worker folder structure and entrypoint in GitHub. Proxies to afo-mobile-deploy-mcp.",
+  preview_worker_deploy:   "Preview a deployment plan without writing to Cloudflare.",
+  deploy_worker:           "Deploy a Worker from GitHub to Cloudflare. Requires confirmed:true.",
+  run_smoke_test:          "Run smoke tests against a live Worker.",
+  list_recent_deploys:     "List recent deployment receipts from GitHub.",
+  register_worker:         "Register or update Worker metadata. Requires confirmed:true.",
+  write_handoff:           "Write a handoff note. Requires confirmed:true."
 };
 
 function llmsText(origin) {
-  return `# ${WORKER_NAME} v${VERSION}\n\nPurpose: Command-center layer above AFO MCP tools. Orchestrates deploy, smoke test, registry, handoff, and Cloudflare inventory for mobile-first workflows.\n\nBase URL: ${origin}\n\nRoutes:\n- GET /                             — Mobile terminal UI\n- GET /health                       — Health check (no secrets exposed)\n- GET /llms.txt\n- GET /tools/list\n- POST /mcp                         — MCP tool surface (canonical agent endpoint)\n- GET /contracts/ui-contract.json\n- GET /cmd                          — Slash-command help + known_workers list\n- GET /cmd/help                     — Slash-command help\n- GET /cmd/{tool_name}?script_name= — Run any tool with script_name only (auto-resolves)\n\nBuilt-in registry: ${Object.keys(DEFAULT_REGISTRY).join(", ")}\n\nTools (${TOOL_NAMES.length}):\n${TOOL_NAMES.map(n => `- ${n}${WRITE_TOOLS.has(n) ? " [write — GET /cmd returns preview only]" : ""}`).join("\n")}\n\nscript_name-only resolution:\n  All worker tools accept ?script_name=afo-buttons-mcp without requiring\n  repo, branch, or worker_path. The built-in DEFAULT_REGISTRY resolves these.\n  Unknown script_name returns unknown_worker (not a 404).\n\nIntegration targets:\n- afo-mobile-deploy-mcp (DEPLOY_MCP_URL env)   — POST to /mcp (normalised at runtime)\n- AFO registry           (REGISTRY_URL env)      — list/register workers\n- handoff-mcp            (HANDOFF_MCP_URL env)   — write handoffs\n- Cloudflare gateway     (CF_GATEWAY_URL env)    — inventory\n- GitHub                 (GITHUB_TOKEN env)       — source-of-truth, receipts, handoffs\n\nSecurity:\n- All write actions require confirmed:true via POST /mcp\n- GET /cmd never executes writes\n- No secrets exposed in /health, UI, logs, or receipts\n`;
+  return `# ${WORKER_NAME} v${VERSION}\n\nPurpose: Command-center layer above AFO MCP tools. Orchestrates deploy, smoke test, registry, handoff, and Cloudflare inventory.\n\nBase URL: ${origin}\n\nRoutes:\n- GET /                             — Mobile terminal UI\n- GET /health                       — Health check\n- GET /llms.txt\n- GET /tools/list\n- POST /mcp                         — MCP tool surface\n- GET /contracts/ui-contract.json\n- GET /cmd                          — Slash-command help\n- GET /cmd/{tool_name}?script_name= — Run any tool\n- GET /diag                         — Full diagnostic snapshot (v0.2.4+)\n- GET /diag/env                     — Safe env binding inventory\n- GET /diag/routes                  — Route health matrix\n- GET /diag/deploy-mcp              — Deploy-mcp 404 origin analysis\n- GET /diag/fetch?url=<target>      — Direct fetch probe to any URL\n\nDiagnostic layer (v0.2.4+):\n  /diag/deploy-mcp probes all 5 steps of the deploy-mcp call chain and\n  classifies any 404 as cloudflare_edge | worker_router | mcp_tool_dispatch.\n  /diag/fetch?url= makes a direct fetch from the Worker runtime (bypassing\n  your local network) and reports status, headers, and body preview.\n\nBuilt-in registry: ${Object.keys(DEFAULT_REGISTRY).join(", ")}\n\nTools (${TOOL_NAMES.length}):\n${TOOL_NAMES.map(n => `- ${n}${WRITE_TOOLS.has(n) ? " [write — requires confirmed:true]" : ""}`).join("\n")}\n\nSecurity:\n- All write actions require confirmed:true via POST /mcp\n- GET /cmd never executes writes\n- No secrets exposed in /health, /diag/env, UI, logs, or receipts\n`;
 }
 
 function uiContract() {
@@ -665,19 +1016,21 @@ function uiContract() {
     name: WORKER_NAME,
     version: VERSION,
     known_workers: Object.keys(DEFAULT_REGISTRY),
+    diag_layer: {
+      full:       "/diag",
+      env:        "/diag/env",
+      routes:     "/diag/routes",
+      deploy_mcp: "/diag/deploy-mcp",
+      fetch:      "/diag/fetch?url=<target>"
+    },
     cards: [
-      { id: "deploy_worker",       label: "Deploy Worker",       tool: "deploy_worker",      inputs: ["script_name","repo","branch","worker_path"], confirm_required: true, shortcut: "script_name only supported" },
-      { id: "smoke_test",          label: "Smoke Test Worker",   tool: "run_smoke_test",     inputs: ["script_name","smoke_paths"], shortcut: "script_name only supported" },
+      { id: "deploy_worker",       label: "Deploy Worker",       tool: "deploy_worker",      inputs: ["script_name","repo","branch","worker_path"], confirm_required: true },
+      { id: "smoke_test",          label: "Smoke Test Worker",   tool: "run_smoke_test",     inputs: ["script_name","smoke_paths"] },
       { id: "list_recent_deploys", label: "List Recent Deploys", tool: "list_recent_deploys",inputs: ["script_name","repo"] },
       { id: "register_worker",     label: "Register Worker",     tool: "register_worker",    inputs: ["script_name","description","tags"], confirm_required: true },
-      { id: "open_urls",           label: "Open Tool URLs",      tool: "open_worker_urls",   inputs: ["script_name","custom_domain"], shortcut: "script_name only supported" },
+      { id: "open_urls",           label: "Open Tool URLs",      tool: "open_worker_urls",   inputs: ["script_name","custom_domain"] },
       { id: "write_handoff",       label: "Write Handoff",       tool: "write_handoff",      inputs: ["title","from","to","project","body","next_steps"], confirm_required: true }
-    ],
-    cmd_layer: {
-      help:    "https://afo-mobile-terminal-mcp.jaredtechfit.workers.dev/cmd",
-      pattern: "/cmd/{tool_name}?script_name=worker-name",
-      write_tools_blocked_via_get: [...WRITE_TOOLS]
-    }
+    ]
   };
 }
 
@@ -693,7 +1046,7 @@ function indexHtml() {
       --bg: #0b1020; --surface: #121a33; --surface2: #1a2540;
       --border: #26345f; --text: #eef2ff; --muted: #8899cc;
       --accent: #3b82f6; --accent2: #60a5fa; --success: #22c55e;
-      --warn: #f59e0b; --error: #ef4444;
+      --warn: #f59e0b; --error: #ef4444; --diag: #a78bfa;
       --radius: 14px; --transition: 160ms cubic-bezier(0.16,1,0.3,1);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -702,15 +1055,19 @@ function indexHtml() {
     header svg { flex-shrink: 0; }
     header h1 { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
     header .version { font-size: 11px; color: var(--muted); background: var(--surface2); padding: 2px 8px; border-radius: 99px; border: 1px solid var(--border); }
-    header .cmd-hint { font-size: 11px; color: var(--muted); margin-left: auto; }
+    header .cmd-hint { font-size: 11px; color: var(--muted); margin-left: auto; display: flex; gap: 10px; }
     header .cmd-hint a { color: var(--accent2); text-decoration: none; }
+    header .cmd-hint a.diag { color: var(--diag); }
     main { max-width: 680px; margin: 0 auto; padding: 20px 16px 80px; }
     .section-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 24px 0 10px; }
     .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; }
+    .card.diag-card { border-color: #3b2f6f; background: #0f0d1f; }
     .card h2 { font-size: 14px; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
     .card h2 .icon { width: 28px; height: 28px; background: var(--surface2); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
     .cmd-badge { font-size: 10px; font-family: monospace; background: #0f172e; border: 1px solid var(--border); color: var(--muted); padding: 2px 7px; border-radius: 6px; margin-left: auto; cursor: pointer; }
     .cmd-badge:hover { border-color: var(--accent); color: var(--accent2); }
+    .diag-badge { font-size: 10px; font-family: monospace; background: #1a1030; border: 1px solid #4c2f8e; color: var(--diag); padding: 2px 7px; border-radius: 6px; cursor: pointer; }
+    .diag-badge:hover { border-color: var(--diag); }
     label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; margin-top: 10px; }
     input, select, textarea { width: 100%; padding: 10px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 14px; transition: border-color var(--transition); }
     input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
@@ -723,11 +1080,16 @@ function indexHtml() {
     .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
     .btn-danger { background: #7f1d1d; color: #fca5a5; }
     .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); font-size: 12px; padding: 8px 12px; min-width: 80px; }
-    .output { margin-top: 14px; background: #080d1c; border-radius: 10px; padding: 12px 14px; font-family: "Menlo","Monaco",monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; color: #94a3b8; max-height: 320px; overflow-y: auto; }
+    .btn-diag { background: #1a1030; color: var(--diag); border: 1px solid #4c2f8e; font-size: 12px; padding: 8px 12px; min-width: 80px; }
+    .btn-diag:hover { background: #241640; }
+    .output { margin-top: 14px; background: #080d1c; border-radius: 10px; padding: 12px 14px; font-family: "Menlo","Monaco",monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; color: #94a3b8; max-height: 360px; overflow-y: auto; }
     .output.ok   { border-left: 3px solid var(--success); }
     .output.err  { border-left: 3px solid var(--error); }
     .output.warn { border-left: 3px solid var(--warn); }
+    .output.diag { border-left: 3px solid var(--diag); }
     .confirm-gate { background: #1c1408; border: 1px solid #78350f; border-radius: 10px; padding: 12px 14px; margin-top: 12px; font-size: 13px; color: #fde68a; }
+    .diag-info { background: #110d20; border: 1px solid #3b2f6f; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; font-size: 12px; color: #c4b5fd; line-height: 1.6; }
+    .diag-info code { background: #1a1030; padding: 1px 5px; border-radius: 4px; font-family: monospace; }
   </style>
 </head>
 <body>
@@ -740,7 +1102,10 @@ function indexHtml() {
   </svg>
   <h1>AFO Mobile Terminal</h1>
   <span class="version">v${VERSION}</span>
-  <span class="cmd-hint"><a href="/cmd" target="_blank">/cmd help</a></span>
+  <span class="cmd-hint">
+    <a href="/cmd" target="_blank">/cmd</a>
+    <a href="/diag" target="_blank" class="diag">🔬 /diag</a>
+  </span>
 </header>
 
 <main>
@@ -750,7 +1115,7 @@ function indexHtml() {
     <label>Script Name <span style="color:var(--accent2)">(required — auto-resolves known workers)</span></label>
     <input id="script_name" placeholder="afo-buttons-mcp">
     <p class="hint">Known: afo-buttons-mcp · afo-mobile-deploy-mcp · afo-mobile-terminal-mcp</p>
-    <label>Repo <span style="color:var(--muted)">(optional — filled from registry if blank)</span></label>
+    <label>Repo <span style="color:var(--muted)">(optional)</span></label>
     <input id="repo" placeholder="nothinginfinity/agent-bridge">
     <label>Branch <span style="color:var(--muted)">(optional)</span></label>
     <input id="branch" placeholder="main">
@@ -758,10 +1123,34 @@ function indexHtml() {
     <input id="worker_path" placeholder="workers/my-worker">
   </div>
 
+  <p class="section-label">🔬 Diagnostics (v0.2.4)</p>
+
+  <div class="card diag-card">
+    <h2><span class="icon">🔬</span> Diagnostic Layer <span class="diag-badge" onclick="window.open('/diag','_blank')">Open /diag</span></h2>
+    <div class="diag-info">
+      Use these tools to isolate where a 404 originates — Cloudflare edge, Worker router, or MCP tool dispatch.
+      <br><code>/diag/deploy-mcp</code> runs 5 sequential probes against afo-mobile-deploy-mcp.
+      <br><code>/diag/fetch?url=</code> makes a direct fetch from Worker runtime to any URL.
+    </div>
+    <label>Direct fetch target URL</label>
+    <input id="diag-url" placeholder="https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/health">
+    <div class="btn-row">
+      <button class="btn-diag" onclick="runDiag('full')">Full /diag</button>
+      <button class="btn-diag" onclick="runDiag('deploy-mcp')">Deploy-MCP probe</button>
+      <button class="btn-diag" onclick="runDiag('env')">Env inventory</button>
+      <button class="btn-diag" onclick="runDiag('routes')">Route matrix</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn-diag" onclick="runDiagFetch()" style="flex:2">Direct Fetch (URL above)</button>
+      <button class="btn-diag" onclick="runDiagFetchPost()" style="flex:2">Direct Fetch POST /mcp</button>
+    </div>
+    <div id="out-diag" class="output diag">Diagnostics not yet run.</div>
+  </div>
+
   <p class="section-label">Build Pipeline</p>
 
   <div class="card">
-    <h2><span class="icon">✅</span> Validate &amp; Preview <span class="cmd-badge" title="Copy GET /cmd URL" onclick="copyCmdUrl('validate_worker')">⌘ /cmd</span></h2>
+    <h2><span class="icon">✅</span> Validate &amp; Preview <span class="cmd-badge" title="Copy /cmd URL" onclick="copyCmdUrl('validate_worker')">⌘ /cmd</span></h2>
     <div class="btn-row">
       <button class="btn-secondary" onclick="callTool('validate_worker', {}, 'out-validate')">Validate Folder</button>
       <button class="btn-secondary" onclick="callTool('preview_worker_deploy', {}, 'out-validate')">Preview Deploy</button>
@@ -813,7 +1202,7 @@ function indexHtml() {
   </div>
 
   <div class="card">
-    <h2><span class="icon">🗂️</span> Command Belts <span class="cmd-badge" onclick="window.open('/cmd/list_command_belts','_blank')">⌘ /cmd</span></h2>
+    <h2><span class="icon">🗂️</span> Command Belts</h2>
     <div class="btn-row">
       <button class="btn-secondary" onclick="callTool('list_command_belts', {}, 'out-belts')">List Belts</button>
       <button class="btn-ghost" onclick="window.open('/cmd/list_command_belts','_blank')">Open in browser</button>
@@ -924,8 +1313,63 @@ async function previewHandoff() { await callTool('write_handoff', handoffArgs(fa
 async function confirmHandoff()  { await callTool('write_handoff', handoffArgs(true),  'out-handoff'); }
 
 function handoffArgs(confirmed) {
-  const steps = document.getElementById('ho-steps').value.split('\n').map(s => s.trim()).filter(Boolean);
+  const steps = document.getElementById('ho-steps').value.split('\\n').map(s => s.trim()).filter(Boolean);
   return { title: document.getElementById('ho-title').value, to: document.getElementById('ho-to').value, project: document.getElementById('ho-project').value, body: document.getElementById('ho-body').value, next_steps: steps, confirmed };
+}
+
+// ── Diagnostic panel ──────────────────────────────────────────────────────────
+async function runDiag(sub) {
+  const out = document.getElementById('out-diag');
+  out.className = 'output diag';
+  out.textContent = 'Running /diag/' + sub + ' ...';
+  try {
+    const path = sub === 'full' ? '/diag' : '/diag/' + sub;
+    const res = await fetch(path);
+    const data = await res.json();
+    out.textContent = JSON.stringify(data, null, 2);
+    out.className = 'output ' + (data.ok === false ? 'err' : 'diag');
+  } catch (err) {
+    out.className = 'output err';
+    out.textContent = 'Error: ' + err.message;
+  }
+}
+
+async function runDiagFetch() {
+  const url = document.getElementById('diag-url').value.trim();
+  if (!url) { alert('Enter a target URL first'); return; }
+  const out = document.getElementById('out-diag');
+  out.className = 'output diag';
+  out.textContent = 'Probing ' + url + ' ...';
+  try {
+    const res = await fetch('/diag/fetch?url=' + encodeURIComponent(url));
+    const data = await res.json();
+    out.textContent = JSON.stringify(data, null, 2);
+    out.className = 'output ' + (data.ok === false ? 'err' : 'diag');
+  } catch (err) {
+    out.className = 'output err';
+    out.textContent = 'Error: ' + err.message;
+  }
+}
+
+async function runDiagFetchPost() {
+  const rawUrl = document.getElementById('diag-url').value.trim();
+  const scriptName = document.getElementById('script_name').value.trim() || 'afo-buttons-mcp';
+  const base = rawUrl || 'https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev';
+  const mcpUrl = base.endsWith('/mcp') ? base : base.replace(/\\/+$/, '') + '/mcp';
+  const body = JSON.stringify({ method: 'tools/list' });
+  const out = document.getElementById('out-diag');
+  out.className = 'output diag';
+  out.textContent = 'POST probing ' + mcpUrl + ' ...';
+  try {
+    const params = new URLSearchParams({ url: mcpUrl, method: 'POST', body });
+    const res = await fetch('/diag/fetch?' + params.toString());
+    const data = await res.json();
+    out.textContent = JSON.stringify(data, null, 2);
+    out.className = 'output ' + (data.ok === false ? 'err' : 'diag');
+  } catch (err) {
+    out.className = 'output err';
+    out.textContent = 'Error: ' + err.message;
+  }
 }
 <\/script>
 </body>
