@@ -1,0 +1,17 @@
+{
+  "title": "afo-mobile-deploy-mcp v0.1 scaffold",
+  "created_at": "2026-06-01T00:00:00Z",
+  "purpose": "GitHub-to-Cloudflare mobile deployment terminal MCP",
+  "next_steps": [
+    "Commit folder to GitHub source-of-truth repo",
+    "Deploy Worker with wrangler or existing Cloudflare multipart MCP",
+    "Set GITHUB_TOKEN, CF_ACCOUNT_ID, CF_API_TOKEN secrets",
+    "Test /health, /llms.txt, /tools/list, and POST /mcp tools/list",
+    "Use deploy_worker_from_github against workers/afo-buttons-mcp"
+  ],
+  "risk_notes": [
+    "Cloudflare script upload requires a token with Workers Scripts Write",
+    "GitHub receipt writes require Contents read/write permission",
+    "Binding preservation is explicit in v0.1 and should be upgraded with full Wrangler TOML parsing in v0.2"
+  ]
+}
