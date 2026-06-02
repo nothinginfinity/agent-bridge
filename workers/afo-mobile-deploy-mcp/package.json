@@ -1,0 +1,14 @@
+{
+  "name": "afo-mobile-deploy-mcp",
+  "version": "0.1.0",
+  "description": "Mobile-agent GitHub-to-Cloudflare Worker deploy MCP.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "health": "node scripts/health.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "latest"
+  }
+}
