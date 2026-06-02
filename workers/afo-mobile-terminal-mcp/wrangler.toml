@@ -5,3 +5,11 @@ workers_dev = true
 
 [vars]
 CF_WORKERS_SUBDOMAIN = "jaredtechfit"
+
+# Service binding for Worker-to-Worker calls.
+# Bypasses workers.dev (which returns Cloudflare error 1042 when called
+# from inside another Worker runtime). Calls go over the internal
+# Cloudflare network instead — no public HTTP needed.
+[[services]]
+binding = "DEPLOY_MCP"
+service = "afo-mobile-deploy-mcp"
