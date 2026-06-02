@@ -1,0 +1,58 @@
+{
+  "name": "afo-mobile-terminal-mcp",
+  "version": "0.1.0",
+  "description": "Command-center layer above AFO MCP tools. Orchestrates deploy, smoke test, registry, handoff, and Cloudflare inventory.",
+  "cards": [
+    {
+      "id": "deploy_worker",
+      "label": "Deploy Worker",
+      "tool": "deploy_worker",
+      "inputs": ["repo", "branch", "worker_path", "script_name"],
+      "confirm_required": true,
+      "description": "Preview-first deploy from GitHub to Cloudflare. Requires confirmed:true to execute."
+    },
+    {
+      "id": "smoke_test",
+      "label": "Smoke Test Worker",
+      "tool": "run_smoke_test",
+      "inputs": ["script_name", "smoke_paths"],
+      "description": "Run smoke tests against a live Worker."
+    },
+    {
+      "id": "list_recent_deploys",
+      "label": "List Recent Deploys",
+      "tool": "list_recent_deploys",
+      "inputs": ["repo", "script_name"],
+      "description": "List deployment receipts from GitHub."
+    },
+    {
+      "id": "register_worker",
+      "label": "Register Worker",
+      "tool": "register_worker",
+      "inputs": ["script_name", "description", "tags"],
+      "confirm_required": true,
+      "description": "Register or update Worker metadata. Requires confirmed:true to write."
+    },
+    {
+      "id": "open_urls",
+      "label": "Open Tool URLs",
+      "tool": "open_worker_urls",
+      "inputs": ["script_name", "custom_domain"],
+      "description": "Return all live URLs for a given worker."
+    },
+    {
+      "id": "write_handoff",
+      "label": "Write Handoff",
+      "tool": "write_handoff",
+      "inputs": ["title", "from", "to", "project", "body", "next_steps"],
+      "confirm_required": true,
+      "description": "Write a handoff note to handoff-mcp or GitHub. Requires confirmed:true to write."
+    }
+  ],
+  "integration_targets": [
+    { "name": "afo-mobile-deploy-mcp", "env_key": "DEPLOY_MCP_URL", "role": "deploy" },
+    { "name": "registry", "env_key": "REGISTRY_URL", "role": "worker_registry" },
+    { "name": "handoff-mcp", "env_key": "HANDOFF_MCP_URL", "role": "handoff_inbox" },
+    { "name": "cf-gateway", "env_key": "CF_GATEWAY_URL", "role": "cloudflare_infra" }
+  ]
+}

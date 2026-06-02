@@ -1,0 +1,42 @@
+# afo-mobile-terminal-mcp
+
+Purpose: Command-center layer above AFO MCP tools. Orchestrates deploy, smoke test, registry, handoff, and Cloudflare inventory for mobile-first workflows.
+
+Version: 0.1.0
+
+Base URL: https://afo-mobile-terminal-mcp.jaredtechfit.workers.dev
+
+Routes:
+- GET /                         — Mobile terminal UI
+- GET /health                   — Health check (no secrets exposed)
+- GET /llms.txt                 — This file
+- GET /tools/list               — JSON tool catalog
+- POST /mcp                     — MCP tool surface
+- GET /contracts/ui-contract.json — UI card contract
+
+Tools (10):
+- list_command_belts      — List all configured command belts and their live status
+- list_registered_workers — List registered workers from registry or GitHub deployments
+- open_worker_urls        — Return all live URLs for a given worker script_name
+- validate_worker         — Validate Worker folder in GitHub (via afo-mobile-deploy-mcp)
+- preview_worker_deploy   — Preview deploy plan without writing to Cloudflare
+- deploy_worker           — Deploy Worker from GitHub to Cloudflare (confirmed:true required)
+- run_smoke_test          — Run smoke tests against a live Worker
+- list_recent_deploys     — List recent deployment receipts from GitHub
+- register_worker         — Register/update Worker metadata (confirmed:true required)
+- write_handoff           — Write a handoff note (confirmed:true required)
+
+Integration targets:
+- afo-mobile-deploy-mcp  (DEPLOY_MCP_URL env)   — deploy, validate, smoke test, receipts
+- AFO registry           (REGISTRY_URL env)      — list/register workers
+- handoff-mcp            (HANDOFF_MCP_URL env)   — write handoffs
+- Cloudflare gateway     (CF_GATEWAY_URL env)    — inventory
+- GitHub                 (GITHUB_TOKEN env)       — source-of-truth, receipts, handoffs
+
+Security:
+- All write actions are preview-first and confirmation-gated (confirmed:true)
+- No secret values ever exposed in /health, UI, logs, or receipts
+- CF_API_TOKEN, GITHUB_TOKEN, CF_ACCOUNT_ID are server-side only
+
+Mobile CLI pattern:
+  iPhone → MCP command surface → GitHub source-of-truth → Cloudflare runtime → smoke tests → receipts

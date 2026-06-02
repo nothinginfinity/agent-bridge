@@ -1,0 +1,13 @@
+{
+  "name": "afo-mobile-terminal-mcp",
+  "version": "0.1.0",
+  "description": "Command-center terminal MCP. Orchestrates deploy, smoke test, registry, handoff, and Cloudflare inventory for AFO mobile workflows.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "latest"
+  }
+}
