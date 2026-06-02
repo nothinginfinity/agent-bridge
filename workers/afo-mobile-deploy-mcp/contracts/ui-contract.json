@@ -1,0 +1,31 @@
+{
+  "name": "afo-mobile-deploy-mcp",
+  "version": "0.1.0",
+  "routes": [
+    "/",
+    "/health",
+    "/llms.txt",
+    "/tools/list",
+    "/mcp"
+  ],
+  "tools": [
+    "deploy_worker_from_github",
+    "preview_worker_from_github",
+    "validate_worker_folder",
+    "read_worker_bundle",
+    "deploy_with_bindings",
+    "run_worker_smoke_test",
+    "write_deploy_receipt",
+    "list_recent_deploys",
+    "rollback_worker_to_github_version",
+    "diff_live_vs_github"
+  ],
+  "required_secrets": [
+    "GITHUB_TOKEN",
+    "CF_ACCOUNT_ID",
+    "CF_API_TOKEN"
+  ],
+  "optional_vars": [
+    "CF_WORKERS_SUBDOMAIN"
+  ]
+}
