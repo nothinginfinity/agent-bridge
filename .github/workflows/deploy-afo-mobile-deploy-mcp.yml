@@ -14,27 +14,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
-    defaults:
-      run:
-        working-directory: workers/afo-mobile-deploy-mcp
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Deploy via Wrangler Action
+        uses: cloudflare/wrangler-action@v3
         with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Deploy via Wrangler
-        run: npm run deploy
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/afo-mobile-deploy-mcp
+          wranglerVersion: '3.114.7'
 
       - name: Verify /health
         run: |
@@ -84,7 +74,7 @@ jobs:
           echo "| [/tools/list](https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev/mcp) | ✅ tools array |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### ⚠️ Runtime secrets still needed" >> $GITHUB_STEP_SUMMARY
-          echo "Set these in the Cloudflare dashboard under **Workers → afo-mobile-deploy-mcp → Settings → Variables**:" >> $GITHUB_STEP_SUMMARY
+          echo "Set these in Cloudflare Dashboard → Workers → afo-mobile-deploy-mcp → Settings → Variables:" >> $GITHUB_STEP_SUMMARY
           echo "- \`GITHUB_TOKEN\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`CF_ACCOUNT_ID\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`CF_API_TOKEN\`" >> $GITHUB_STEP_SUMMARY
