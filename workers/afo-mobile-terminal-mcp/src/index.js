@@ -1,4 +1,4 @@
-// afo-mobile-terminal-mcp v0.3.0
+// afo-mobile-terminal-mcp v0.3.1
 // Preview-safe Mobile Terminal command router for AFO Site Bundle dry-run integration.
 // GitHub is source of truth. This Worker does not deploy, create production routes,
 // add custom domains, add protected runtime values, or mutate Cloudflare runtime state.
@@ -12,7 +12,7 @@ import {
   handleAfoSiteBundleHttp
 } from "./afo-site-bundle-commands.js";
 
-const VERSION = "0.3.0";
+const VERSION = "0.3.1";
 const WORKER_NAME = "afo-mobile-terminal-mcp";
 const ROUTES = [
   "GET /",
@@ -27,6 +27,7 @@ const ROUTES = [
   "GET /bundle/preview-plan",
   "GET /bundle/smoke-test-plan",
   "POST /bundle/write-validation-receipt",
+  "GET /bundle/write-validation-receipt-action (guarded)",
   "POST /bundle/deploy-worker (blocked)",
   "POST /bundle/register-worker (blocked)",
   "POST /bundle/write-production-receipt (blocked)"
@@ -97,6 +98,8 @@ function toolsList() {
     name: tool.name,
     description: tool.description,
     blocked: Boolean(tool.blocked),
+    guarded: Boolean(tool.guarded),
+    required_confirm: tool.confirm || null,
     write: tool.name === "write_validation_receipt",
     inputSchema: siteBundleInputSchema(tool.name)
   }));
@@ -110,7 +113,8 @@ function siteBundleInputSchema(name) {
     bundle_path: { type: "string", default: DEFAULT_BUNDLE_SOURCE.bundle_path },
     schema_path: { type: "string", default: DEFAULT_BUNDLE_SOURCE.schema_path },
     worker_path: { type: "string", default: DEFAULT_BUNDLE_SOURCE.worker_path },
-    receipt_path: { type: "string", default: DEFAULT_BUNDLE_SOURCE.receipt_path }
+    receipt_path: { type: "string", default: DEFAULT_BUNDLE_SOURCE.receipt_path },
+    confirm: { type: "string", description: "Required for GET/cmd write_validation_receipt: dry-run-receipt" }
   };
 
   return {
@@ -118,7 +122,7 @@ function siteBundleInputSchema(name) {
     properties: sourceProperties,
     required: [],
     description: name === "write_validation_receipt"
-      ? "Writes a dry-run validation receipt to GitHub after validation passes. Does not deploy."
+      ? "Writes a dry-run validation receipt to GitHub. POST remains supported; GET/cmd fallback requires confirm=dry-run-receipt. Does not deploy."
       : "Reads GitHub source-of-truth files and returns dry-run validation output."
   };
 }
@@ -167,7 +171,8 @@ function cmdHelp(origin) {
       validate_worker: `${origin}/cmd/validate_worker`,
       preview_plan: `${origin}/cmd/preview_plan`,
       smoke_test_plan: `${origin}/cmd/smoke_test_plan`,
-      write_validation_receipt: `${origin}/bundle/write-validation-receipt`,
+      guarded_write_validation_receipt: `${origin}/bundle/write-validation-receipt-action?confirm=dry-run-receipt`,
+      guarded_cmd_write_validation_receipt: `${origin}/cmd/write_validation_receipt?confirm=dry-run-receipt`,
       blocked_deploy_worker: `${origin}/bundle/deploy-worker`
     },
     routes: ROUTES,
@@ -176,7 +181,7 @@ function cmdHelp(origin) {
 }
 
 function llmsText(origin) {
-  return `# AFO Mobile Terminal MCP\n\nPreview-safe Mobile Terminal command surface for AFO Site Bundle dry-run validation.\n\nSource of truth: GitHub. Runtime deployment is not performed by this layer.\n\nSafe commands:\n- validate_bundle\n- validate_worker\n- preview_plan\n- smoke_test_plan\n- write_validation_receipt\n\nBlocked commands:\n- deploy_worker\n- register_worker\n- write_production_receipt\n\nHTTP routes:\n${ROUTES.map((route) => `- ${origin}${route.replace(/^[A-Z]+ /, "")}`).join("\n")}\n`;
+  return `# AFO Mobile Terminal MCP\n\nPreview-safe Mobile Terminal command surface for AFO Site Bundle dry-run validation.\n\nSource of truth: GitHub. Runtime deployment is not performed by this layer.\n\nSafe commands:\n- validate_bundle\n- validate_worker\n- preview_plan\n- smoke_test_plan\n- write_validation_receipt (guarded for GET/cmd fallback)\n\nGuarded GET write action:\n- ${origin}/bundle/write-validation-receipt-action?confirm=dry-run-receipt\n\nBlocked commands:\n- deploy_worker\n- register_worker\n- write_production_receipt\n\nHTTP routes:\n${ROUTES.map((route) => `- ${origin}${route.replace(/^[A-Z]+ /, "")}`).join("\n")}\n`;
 }
 
 function indexHtml(origin) {
@@ -201,6 +206,7 @@ function indexHtml(origin) {
       <li><a href="${origin}/bundle/worker/validate">Validate Worker</a></li>
       <li><a href="${origin}/bundle/preview-plan">Preview plan</a></li>
       <li><a href="${origin}/bundle/smoke-test-plan">Smoke-test plan</a></li>
+      <li><a href="${origin}/bundle/write-validation-receipt-action">Guarded receipt action without confirm (blocked)</a></li>
       <li><a href="${origin}/tools/list">Tools list</a></li>
     </ul>
   </main>
