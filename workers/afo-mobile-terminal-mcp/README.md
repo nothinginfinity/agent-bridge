@@ -1,120 +1,193 @@
 # afo-mobile-terminal-mcp
 
-> Command-center layer above individual AFO MCP tools.  
-> Orchestrates deploy, smoke test, registry, handoff, and Cloudflare inventory.
+> Preview-safe Mobile Terminal command surface for AFO Site Bundle validation and dry-run planning.
 
-**Live URL:** https://afo-mobile-terminal-mcp.jaredtechfit.workers.dev  
-**Version:** 0.1.0  
-**Repo:** `workers/afo-mobile-terminal-mcp/`
+**Repo path:** `workers/afo-mobile-terminal-mcp/`  
+**Version:** `0.3.0`  
+**Source of truth:** GitHub  
+**Runtime rule:** this layer does not deploy or mutate Cloudflare runtime state.
 
 ---
 
-## Routes
+## AFO Site Bundle source
+
+Default source consumed by the bundle commands:
+
+```json
+{
+  "owner": "nothinginfinity",
+  "repo": "afo-site-bundle-contract",
+  "ref": "main",
+  "bundle_path": "examples/example-business/afo.site.bundle.json",
+  "schema_path": "schema/afo.site.bundle.schema.json",
+  "worker_path": "examples/example-business/worker",
+  "receipt_path": "receipts/example-business.validation.dry-run.json"
+}
+```
+
+---
+
+## HTTP routes
 
 | Route | Method | Description |
-|---|---|---|
-| `/` | GET | Mobile terminal UI |
-| `/health` | GET | Health check (no secrets exposed) |
-| `/llms.txt` | GET | LLM-readable description |
-| `/tools/list` | GET | JSON tool catalog |
-| `/mcp` | POST | MCP tool surface |
-| `/contracts/ui-contract.json` | GET | UI card contract |
+|---|---:|---|
+| `/` | GET | Minimal command UI |
+| `/health` | GET | Health check; exposes no secret values |
+| `/llms.txt` | GET | LLM-readable command description |
+| `/tools/list` | GET | MCP tool catalog |
+| `/mcp` | POST | MCP `tools/list` and `tools/call` endpoint |
+| `/cmd/help` | GET | Slash-command help |
+| `/cmd/:command` | GET | Slash-command wrapper for Site Bundle commands |
+| `/bundle/validate` | GET | Runs `validate_bundle` |
+| `/bundle/worker/validate` | GET | Runs `validate_worker` |
+| `/bundle/preview-plan` | GET | Runs `preview_plan` |
+| `/bundle/smoke-test-plan` | GET | Runs `smoke_test_plan` |
+| `/bundle/write-validation-receipt` | POST | Runs `write_validation_receipt` |
+| `/bundle/deploy-worker` | POST | Blocked/no-op `deploy_worker` response |
+| `/bundle/register-worker` | POST | Blocked/no-op `register_worker` response |
+| `/bundle/write-production-receipt` | POST | Blocked/no-op `write_production_receipt` response |
 
 ---
 
-## Tools
+## Safe commands
 
-| Tool | Write? | Description |
-|---|---|---|
-| `list_command_belts` | No | List all configured command belts + live status |
-| `list_registered_workers` | No | List workers from registry or GitHub deploys folder |
-| `open_worker_urls` | No | Return all live URLs for a worker |
-| `validate_worker` | No | Validate Worker folder in GitHub |
-| `preview_worker_deploy` | No | Preview deploy plan without writing |
-| `deploy_worker` | **Yes** | Deploy from GitHub to Cloudflare (requires `confirmed:true`) |
-| `run_smoke_test` | No | Smoke test a live Worker |
-| `list_recent_deploys` | No | List deployment receipts from GitHub |
-| `register_worker` | **Yes** | Register/update Worker metadata (requires `confirmed:true`) |
-| `write_handoff` | **Yes** | Write handoff note (requires `confirmed:true`) |
+### `validate_bundle`
 
----
+Reads the bundle and schema from GitHub and confirms:
 
-## Integration Targets
+- `schema` is `afo.site.bundle`
+- `schema_version` is `1.0.0`
+- `deployment.deploy_mode` is `preview_first`
+- `deployment.confirmed` is `false`
+- `deployment.environment` is `preview`
+- `worker.routes` is empty
 
-| Target | Env Key | Role | Default |
-|---|---|---|---|
-| `afo-mobile-deploy-mcp` | `DEPLOY_MCP_URL` | deploy, validate, smoke test, receipts | `https://afo-mobile-deploy-mcp.jaredtechfit.workers.dev` |
-| AFO registry | `REGISTRY_URL` | list/register workers | not configured |
-| handoff-mcp | `HANDOFF_MCP_URL` | write handoffs | not configured |
-| Cloudflare gateway | `CF_GATEWAY_URL` | inventory | not configured |
-| GitHub | `GITHUB_TOKEN` | source-of-truth, receipts, handoffs | required |
+### `validate_worker`
 
----
+Reads Worker files from GitHub and confirms:
 
-## Mobile CLI Pattern
+- `package.json` exists
+- `wrangler.toml` exists
+- `src/index.ts` exists
+- Wrangler config has no live route entries
+- Wrangler config has no account-scoped identifiers
+- Wrangler config has no custom domain entries
+- Wrangler config has no vars block
+- Wrangler config has no protected key entries
+- Worker source explicitly supports `/`, `/health`, `/llms.txt`, `/robots.txt`, `/sitemap.xml`, and `/schema.json`
 
+### `preview_plan`
+
+Returns a preview-only plan. It does not run preview.
+
+Expected plan values:
+
+```json
+{
+  "mode": "dry_run_only",
+  "allowed_command": "npm run preview",
+  "working_directory": "examples/example-business/worker",
+  "runtime_publish_blocked": true
+}
 ```
-iPhone
-  → MCP command surface (afo-mobile-terminal-mcp)
-    → validate_worker / preview_worker_deploy
-    → deploy_worker (confirmed:true)
-      → afo-mobile-deploy-mcp → Cloudflare
-    → run_smoke_test
-    → open_worker_urls
-    → list_recent_deploys
-    → register_worker (confirmed:true)
-    → write_handoff (confirmed:true)
+
+### `smoke_test_plan`
+
+Returns route checks for a future preview URL:
+
+- `GET /` expects `200` and `text/html`
+- `GET /health` expects `200` and `application/json`
+- `GET /llms.txt` expects `200` and `text/plain`
+- `GET /robots.txt` expects `200` and `text/plain`
+- `GET /sitemap.xml` expects `200` and `application/xml`
+- `GET /schema.json` expects `200` and `application/json`
+
+### `write_validation_receipt`
+
+Writes or updates a dry-run validation receipt at:
+
+```text
+receipts/example-business.validation.dry-run.json
+```
+
+The receipt includes:
+
+- `dry_run: true`
+- `deployed: false`
+- `production_deploy_attempted: false`
+- `runtime_publish_attempted: false`
+- source repo info
+- validation checks
+- preview plan
+- smoke-test plan
+- timestamp
+- acting system name
+
+---
+
+## Blocked commands
+
+These commands are present only as blocked/no-op responses in this layer:
+
+- `deploy_worker`
+- `register_worker`
+- `write_production_receipt`
+
+Each blocked response explains that:
+
+- this layer is dry-run only
+- production requires `deployment.confirmed = true`
+- production requires explicit operator approval in the current task
+- no production action was taken
+
+---
+
+## MCP usage
+
+List tools:
+
+```json
+{
+  "method": "tools/list"
+}
+```
+
+Call a tool:
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "validate_bundle",
+    "arguments": {}
+  }
+}
 ```
 
 ---
 
-## Deploy
+## Local checks
 
 ```bash
 cd workers/afo-mobile-terminal-mcp
 npm install
-npx wrangler deploy
+npm run check
 ```
 
-Or use GitHub Actions (`.github/workflows/deploy-afo-mobile-terminal-mcp.yml`).
+`npm run check` performs JavaScript syntax checks only. It does not deploy.
 
 ---
 
-## Required Env Bindings (Cloudflare)
+## Safety constraints
 
-| Binding | Type | Notes |
-|---|---|---|
-| `GITHUB_TOKEN` | Secret | GitHub API token — write receipts, handoffs, register workers |
-| `CF_ACCOUNT_ID` | Secret | Cloudflare account ID — needed for `deploy_worker` |
-| `CF_API_TOKEN` | Secret | Cloudflare API token — needed for `deploy_worker` |
-| `DEPLOY_MCP_URL` | Var | Optional override for afo-mobile-deploy-mcp URL |
-| `REGISTRY_URL` | Var | Optional AFO registry URL |
-| `HANDOFF_MCP_URL` | Var | Optional handoff-mcp URL |
-| `CF_GATEWAY_URL` | Var | Optional Cloudflare infra gateway URL |
+This layer does not:
 
-> ⚠️ Never expose secret values in `/health`, UI, logs, or receipts.
+- run `wrangler deploy`
+- create production routes
+- add custom domains
+- add account-scoped identifiers
+- add protected runtime values
+- set `deployment.confirmed` to `true`
+- mutate Cloudflare runtime state
 
----
-
-## Security Model
-
-- All **write actions** (`deploy_worker`, `register_worker`, `write_handoff`) are **preview-first** and require `confirmed: true`
-- All secrets are server-side env bindings only
-- `/health` reports binding presence as `configured` / `not_configured` — never the values
-- No credentials forwarded through the UI or logs
-
----
-
-## Definition of Done — v0.1
-
-An iPhone user can:
-
-1. ✅ Select or type `repo/branch/worker_path/script_name`
-2. ✅ Validate Worker folder
-3. ✅ Preview deploy
-4. ✅ Deploy through `afo-mobile-deploy-mcp`
-5. ✅ See smoke-test results
-6. ✅ See/open live URLs
-7. ✅ See deployment receipt path
-8. ✅ Write a handoff note
-9. ✅ Register or update Worker metadata
+The only write operation is `write_validation_receipt`, which writes a dry-run receipt to the GitHub source-of-truth repo after validation passes.
