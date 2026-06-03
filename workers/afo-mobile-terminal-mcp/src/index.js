@@ -1,19 +1,43 @@
-// afo-mobile-terminal-mcp v0.3.1
-// Preview-safe Mobile Terminal command router for AFO Site Bundle dry-run integration.
-// GitHub is source of truth. This Worker does not deploy, create production routes,
-// add custom domains, add protected runtime values, or mutate Cloudflare runtime state.
+// afo-mobile-terminal-mcp v0.3.2
+// Single-file preview-safe Mobile Terminal command router for AFO Site Bundle dry-run integration.
+// GitHub is source of truth. This Worker validates, plans, and writes dry-run receipts only.
 
-import {
-  AFO_SITE_BUNDLE_COMMANDS,
-  AFO_SITE_BUNDLE_VERSION,
-  DEFAULT_BUNDLE_SOURCE,
-  afoSiteBundleTools,
-  handleAfoSiteBundleCommand,
-  handleAfoSiteBundleHttp
-} from "./afo-site-bundle-commands.js";
-
-const VERSION = "0.3.1";
+const VERSION = "0.3.2";
 const WORKER_NAME = "afo-mobile-terminal-mcp";
+const AFO_SITE_BUNDLE_VERSION = "1.0.0";
+const DRY_RUN_RECEIPT_CONFIRM = "dry-run-receipt";
+
+const DEFAULT_BUNDLE_SOURCE = Object.freeze({
+  owner: "nothinginfinity",
+  repo: "afo-site-bundle-contract",
+  ref: "main",
+  bundle_path: "examples/example-business/afo.site.bundle.json",
+  schema_path: "schema/afo.site.bundle.schema.json",
+  worker_path: "examples/example-business/worker",
+  receipt_path: "receipts/example-business.validation.dry-run.json"
+});
+
+const AFO_SITE_BUNDLE_COMMANDS = Object.freeze([
+  "validate_bundle",
+  "validate_worker",
+  "preview_plan",
+  "smoke_test_plan",
+  "write_validation_receipt",
+  "deploy_worker",
+  "register_worker",
+  "write_production_receipt"
+]);
+
+const REQUIRED_WORKER_FILES = ["package.json", "wrangler.toml", "src/index.ts"];
+const REQUIRED_WORKER_ROUTES = [
+  { path: "/", method: "GET", expected_status: 200, expected_content_type: "text/html" },
+  { path: "/health", method: "GET", expected_status: 200, expected_content_type: "application/json", expected_body_marker: "ok" },
+  { path: "/llms.txt", method: "GET", expected_status: 200, expected_content_type: "text/plain" },
+  { path: "/robots.txt", method: "GET", expected_status: 200, expected_content_type: "text/plain" },
+  { path: "/sitemap.xml", method: "GET", expected_status: 200, expected_content_type: "application/xml" },
+  { path: "/schema.json", method: "GET", expected_status: 200, expected_content_type: "application/json" }
+];
+
 const ROUTES = [
   "GET /",
   "GET /health",
@@ -36,40 +60,18 @@ const ROUTES = [
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return withCors(new Response(null, { status: 204 }));
-
     const url = new URL(request.url);
-
     try {
-      const bundleRoute = await handleAfoSiteBundleHttp(request, env);
+      const bundleRoute = await handleBundleHttp(request, env, url);
       if (bundleRoute) return json(bundleRoute, bundleRoute.ok === false && bundleRoute.blocked ? 403 : 200);
 
-      if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/ui")) {
-        return html(indexHtml(url.origin));
-      }
-
-      if (request.method === "GET" && url.pathname === "/health") {
-        return json(healthPayload(env));
-      }
-
-      if (request.method === "GET" && url.pathname === "/llms.txt") {
-        return text(llmsText(url.origin), "text/plain; charset=utf-8");
-      }
-
-      if (request.method === "GET" && url.pathname === "/tools/list") {
-        return json({ ok: true, tools: toolsList() });
-      }
-
-      if (request.method === "GET" && (url.pathname === "/cmd" || url.pathname === "/cmd/" || url.pathname === "/cmd/help")) {
-        return json(cmdHelp(url.origin));
-      }
-
-      if (request.method === "GET" && url.pathname.startsWith("/cmd/")) {
-        return json(await handleCmd(url, env));
-      }
-
-      if (request.method === "POST" && url.pathname === "/mcp") {
-        return json(await handleMcp(request, env));
-      }
+      if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/ui")) return html(indexHtml(url.origin));
+      if (request.method === "GET" && url.pathname === "/health") return json(healthPayload(env));
+      if (request.method === "GET" && url.pathname === "/llms.txt") return text(llmsText(url.origin), "text/plain; charset=utf-8");
+      if (request.method === "GET" && url.pathname === "/tools/list") return json({ ok: true, tools: toolsList() });
+      if (request.method === "GET" && (url.pathname === "/cmd" || url.pathname === "/cmd/" || url.pathname === "/cmd/help")) return json(cmdHelp(url.origin));
+      if (request.method === "GET" && url.pathname.startsWith("/cmd/")) return json(await handleCmd(url, env));
+      if (request.method === "POST" && url.pathname === "/mcp") return json(await handleMcp(request, env));
 
       return json({ ok: false, error: "not_found", path: url.pathname, routes: ROUTES }, 404);
     } catch (err) {
@@ -78,179 +80,213 @@ export default {
   }
 };
 
-function healthPayload(env) {
-  return {
-    ok: true,
-    worker: WORKER_NAME,
-    version: VERSION,
-    site_bundle_version: AFO_SITE_BUNDLE_VERSION,
-    dry_run_only: true,
-    deployed: false,
-    runtime_publish_enabled: false,
-    github_token: env?.GITHUB_TOKEN ? "configured" : "not_configured",
-    routes: ROUTES,
-    source: DEFAULT_BUNDLE_SOURCE
-  };
-}
+async function handleBundleHttp(request, env, url) {
+  const method = request.method.toUpperCase();
+  if (method === "GET" && url.pathname === "/bundle/validate") return validateBundle({ query: url.searchParams, env });
+  if (method === "GET" && url.pathname === "/bundle/worker/validate") return validateWorker({ query: url.searchParams, env });
+  if (method === "GET" && url.pathname === "/bundle/preview-plan") return previewPlan({ query: url.searchParams });
+  if (method === "GET" && url.pathname === "/bundle/smoke-test-plan") return smokeTestPlan({ query: url.searchParams });
 
-function toolsList() {
-  return afoSiteBundleTools().map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    blocked: Boolean(tool.blocked),
-    guarded: Boolean(tool.guarded),
-    required_confirm: tool.confirm || null,
-    write: tool.name === "write_validation_receipt",
-    inputSchema: siteBundleInputSchema(tool.name)
-  }));
-}
+  if (method === "POST" && url.pathname === "/bundle/write-validation-receipt") {
+    const body = await safeJson(request);
+    return writeValidationReceipt({ args: { ...body, invocation_method: "POST /bundle/write-validation-receipt" }, env });
+  }
 
-function siteBundleInputSchema(name) {
-  const sourceProperties = {
-    owner: { type: "string", default: DEFAULT_BUNDLE_SOURCE.owner },
-    repo: { type: "string", default: DEFAULT_BUNDLE_SOURCE.repo },
-    ref: { type: "string", default: DEFAULT_BUNDLE_SOURCE.ref },
-    bundle_path: { type: "string", default: DEFAULT_BUNDLE_SOURCE.bundle_path },
-    schema_path: { type: "string", default: DEFAULT_BUNDLE_SOURCE.schema_path },
-    worker_path: { type: "string", default: DEFAULT_BUNDLE_SOURCE.worker_path },
-    receipt_path: { type: "string", default: DEFAULT_BUNDLE_SOURCE.receipt_path },
-    confirm: { type: "string", description: "Required for GET/cmd write_validation_receipt: dry-run-receipt" }
-  };
+  if (method === "GET" && url.pathname === "/bundle/write-validation-receipt-action") {
+    if (url.searchParams.get("confirm") !== DRY_RUN_RECEIPT_CONFIRM) return guardedReceiptBlocked("GET /bundle/write-validation-receipt-action");
+    const args = Object.fromEntries(url.searchParams.entries());
+    return writeValidationReceipt({ args: { ...args, invocation_method: "GET guarded action" }, env });
+  }
 
-  return {
-    type: "object",
-    properties: sourceProperties,
-    required: [],
-    description: name === "write_validation_receipt"
-      ? "Writes a dry-run validation receipt to GitHub. POST remains supported; GET/cmd fallback requires confirm=dry-run-receipt. Does not deploy."
-      : "Reads GitHub source-of-truth files and returns dry-run validation output."
-  };
+  if (method === "POST" && url.pathname === "/bundle/deploy-worker") return blockedProductionCommand("deploy_worker");
+  if (method === "POST" && url.pathname === "/bundle/register-worker") return blockedProductionCommand("register_worker");
+  if (method === "POST" && url.pathname === "/bundle/write-production-receipt") return blockedProductionCommand("write_production_receipt");
+  return null;
 }
 
 async function handleMcp(request, env) {
   const body = await safeJson(request);
   const { method, params } = body || {};
-
-  if (method === "tools/list") {
-    return { ok: true, tools: toolsList() };
-  }
-
+  if (method === "tools/list") return { ok: true, tools: toolsList() };
   if (method === "tools/call") {
     const name = params?.name;
     const args = params?.arguments || {};
-    if (!AFO_SITE_BUNDLE_COMMANDS.includes(name)) {
-      return { ok: false, error: "unknown_tool", tool: name, available: AFO_SITE_BUNDLE_COMMANDS };
-    }
-    const result = await handleAfoSiteBundleCommand(name, args, env);
+    if (!AFO_SITE_BUNDLE_COMMANDS.includes(name)) return { ok: false, error: "unknown_tool", tool: name, available: AFO_SITE_BUNDLE_COMMANDS };
+    const result = await handleBundleCommand(name, args, env);
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   }
-
   return { ok: false, error: "unknown_method", method, supported_methods: ["tools/list", "tools/call"] };
 }
 
 async function handleCmd(url, env) {
   const parts = url.pathname.split("/").filter(Boolean);
   const command = parts[1];
-  if (!AFO_SITE_BUNDLE_COMMANDS.includes(command)) {
-    return { ok: false, error: "unknown_command", command, available: AFO_SITE_BUNDLE_COMMANDS };
-  }
+  if (!AFO_SITE_BUNDLE_COMMANDS.includes(command)) return { ok: false, error: "unknown_command", command, available: AFO_SITE_BUNDLE_COMMANDS };
   const args = Object.fromEntries(url.searchParams.entries());
-  return handleAfoSiteBundleCommand(command, args, env);
+  return handleBundleCommand(command, args, env);
 }
 
-function cmdHelp(origin) {
-  return {
-    ok: true,
-    worker: WORKER_NAME,
-    version: VERSION,
-    dry_run_only: true,
-    description: "AFO Mobile Terminal dry-run command surface for AFO Site Bundle validation.",
-    commands: AFO_SITE_BUNDLE_COMMANDS,
-    examples: {
-      validate_bundle: `${origin}/cmd/validate_bundle`,
-      validate_worker: `${origin}/cmd/validate_worker`,
-      preview_plan: `${origin}/cmd/preview_plan`,
-      smoke_test_plan: `${origin}/cmd/smoke_test_plan`,
-      guarded_write_validation_receipt: `${origin}/bundle/write-validation-receipt-action?confirm=dry-run-receipt`,
-      guarded_cmd_write_validation_receipt: `${origin}/cmd/write_validation_receipt?confirm=dry-run-receipt`,
-      blocked_deploy_worker: `${origin}/bundle/deploy-worker`
-    },
-    routes: ROUTES,
-    blocked_commands: ["deploy_worker", "register_worker", "write_production_receipt"]
-  };
-}
-
-function llmsText(origin) {
-  return `# AFO Mobile Terminal MCP\n\nPreview-safe Mobile Terminal command surface for AFO Site Bundle dry-run validation.\n\nSource of truth: GitHub. Runtime deployment is not performed by this layer.\n\nSafe commands:\n- validate_bundle\n- validate_worker\n- preview_plan\n- smoke_test_plan\n- write_validation_receipt (guarded for GET/cmd fallback)\n\nGuarded GET write action:\n- ${origin}/bundle/write-validation-receipt-action?confirm=dry-run-receipt\n\nBlocked commands:\n- deploy_worker\n- register_worker\n- write_production_receipt\n\nHTTP routes:\n${ROUTES.map((route) => `- ${origin}${route.replace(/^[A-Z]+ /, "")}`).join("\n")}\n`;
-}
-
-function indexHtml(origin) {
-  const rows = ROUTES.map((route) => `<li><code>${escapeHtml(route)}</code></li>`).join("\n");
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AFO Mobile Terminal MCP</title>
-</head>
-<body>
-  <main>
-    <h1>AFO Mobile Terminal MCP</h1>
-    <p>Preview-safe dry-run command surface for AFO Site Bundle validation.</p>
-    <p>No production deployment, route creation, custom domain wiring, or runtime publish action is performed by this layer.</p>
-    <h2>Routes</h2>
-    <ul>${rows}</ul>
-    <h2>Quick links</h2>
-    <ul>
-      <li><a href="${origin}/bundle/validate">Validate bundle</a></li>
-      <li><a href="${origin}/bundle/worker/validate">Validate Worker</a></li>
-      <li><a href="${origin}/bundle/preview-plan">Preview plan</a></li>
-      <li><a href="${origin}/bundle/smoke-test-plan">Smoke-test plan</a></li>
-      <li><a href="${origin}/bundle/write-validation-receipt-action">Guarded receipt action without confirm (blocked)</a></li>
-      <li><a href="${origin}/tools/list">Tools list</a></li>
-    </ul>
-  </main>
-</body>
-</html>`;
-}
-
-function json(payload, status = 200) {
-  return withCors(new Response(JSON.stringify(payload, null, 2), {
-    status,
-    headers: { "content-type": "application/json; charset=utf-8" }
-  }));
-}
-
-function html(body, status = 200) {
-  return withCors(new Response(body, {
-    status,
-    headers: { "content-type": "text/html; charset=utf-8" }
-  }));
-}
-
-function text(body, contentType, status = 200) {
-  return withCors(new Response(body, {
-    status,
-    headers: { "content-type": contentType }
-  }));
-}
-
-function withCors(response) {
-  const headers = new Headers(response.headers);
-  headers.set("access-control-allow-origin", "*");
-  headers.set("access-control-allow-methods", "GET,POST,OPTIONS");
-  headers.set("access-control-allow-headers", "content-type,authorization");
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
-}
-
-async function safeJson(request) {
-  try {
-    return await request.json();
-  } catch {
-    return {};
+async function handleBundleCommand(name, args = {}, env = {}) {
+  switch (name) {
+    case "validate_bundle": return validateBundle({ args, env });
+    case "validate_worker": return validateWorker({ args, env });
+    case "preview_plan": return previewPlan({ args });
+    case "smoke_test_plan": return smokeTestPlan({ args });
+    case "write_validation_receipt":
+      if (args.confirm !== DRY_RUN_RECEIPT_CONFIRM) return guardedReceiptBlocked("cmd/write_validation_receipt");
+      return writeValidationReceipt({ args: { ...args, invocation_method: args.invocation_method || "GET /cmd/write_validation_receipt guarded action" }, env });
+    case "deploy_worker":
+    case "register_worker":
+    case "write_production_receipt": return blockedProductionCommand(name);
+    default: return { ok: false, error: "unknown_bundle_command", command: name, available_commands: AFO_SITE_BUNDLE_COMMANDS };
   }
 }
 
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[char]));
+async function validateBundle({ args = {}, query, env }) {
+  const source = sourceFrom(args, query);
+  const checks = [];
+  const [bundleResult, schemaResult] = await Promise.all([
+    githubReadJson(source, source.bundle_path, env),
+    githubReadJson(source, source.schema_path, env)
+  ]);
+  if (!bundleResult.ok || !schemaResult.ok) return result(false, source, checks, [bundleResult.error, schemaResult.error].filter(Boolean));
+  const bundle = bundleResult.json;
+  const schema = schemaResult.json;
+  check(checks, "schema_file_loaded", Boolean(schema && schema.type === "object"), { path: source.schema_path });
+  check(checks, "bundle_file_loaded", Boolean(bundle && typeof bundle === "object"), { path: source.bundle_path });
+  check(checks, "bundle_schema_validation", validateRequiredTopLevel(bundle, schema), { schema_title: schema.title || null });
+  check(checks, "bundle_schema_name", bundle.schema === "afo.site.bundle", { actual: bundle.schema });
+  check(checks, "bundle_schema_version", bundle.schema_version === "1.0.0", { actual: bundle.schema_version });
+  check(checks, "deployment_mode", bundle.deployment?.deploy_mode === "preview_first", { actual: bundle.deployment?.deploy_mode });
+  check(checks, "deployment_confirmed_false", bundle.deployment?.confirmed === false, { actual: bundle.deployment?.confirmed });
+  check(checks, "deployment_environment_preview", bundle.deployment?.environment === "preview", { actual: bundle.deployment?.environment });
+  check(checks, "worker_routes_empty", Array.isArray(bundle.worker?.routes) && bundle.worker.routes.length === 0, { actual_count: Array.isArray(bundle.worker?.routes) ? bundle.worker.routes.length : null });
+  return result(allPassed(checks), source, checks, [], { bundle_id: bundle.bundle_id, client: bundle.client?.name || null });
 }
+
+async function validateWorker({ args = {}, query, env }) {
+  const source = sourceFrom(args, query);
+  const checks = [];
+  const reads = await Promise.all(REQUIRED_WORKER_FILES.map((file) => githubReadText(source, `${source.worker_path}/${file}`, env)));
+  for (let i = 0; i < REQUIRED_WORKER_FILES.length; i += 1) check(checks, `worker_file_${REQUIRED_WORKER_FILES[i]}`, reads[i].ok, { path: `${source.worker_path}/${REQUIRED_WORKER_FILES[i]}` });
+  const [pkgText, wranglerToml, workerSource] = reads.map((item) => item.text || "");
+  let pkg = {};
+  try { pkg = JSON.parse(pkgText); } catch { check(checks, "worker_package_json_parse", false); }
+  if (pkgText) check(checks, "worker_package_json_parse", Boolean(pkg && typeof pkg === "object"));
+  const scripts = pkg.scripts || {};
+  check(checks, "worker_dev_script_safe", scripts.dev === "wrangler dev", { actual: scripts.dev || null });
+  check(checks, "worker_preview_script_safe", scripts.preview === "wrangler dev --remote", { actual: scripts.preview || null });
+  check(checks, "worker_deploy_script_blocked", typeof scripts.deploy === "string" && !/wrangler\s+deploy/.test(scripts.deploy) && /exit\s+1/.test(scripts.deploy), { actual_present: typeof scripts.deploy === "string" });
+  validateWrangler(checks, wranglerToml);
+  validateWorkerRoutes(checks, workerSource);
+  return result(allPassed(checks), source, checks);
+}
+
+function previewPlan({ args = {}, query }) {
+  const source = sourceFrom(args, query);
+  return { ok: true, command: "preview_plan", dry_run: true, deployed: false, source, preview_plan: buildPreviewPlan(source) };
+}
+
+function smokeTestPlan({ args = {}, query }) {
+  const source = sourceFrom(args, query);
+  return { ok: true, command: "smoke_test_plan", dry_run: true, deployed: false, source, smoke_test_plan: buildSmokeTestPlan() };
+}
+
+async function writeValidationReceipt({ args = {}, env }) {
+  const source = sourceFrom(args);
+  const [bundleResult, workerResult] = await Promise.all([validateBundle({ args: source, env }), validateWorker({ args: source, env })]);
+  const checks = [...(bundleResult.checks || []), ...(workerResult.checks || [])];
+  const passed = bundleResult.ok === true && workerResult.ok === true && allPassed(checks);
+  const receipt = {
+    receipt_schema: "afo.mobile_terminal.validation_receipt",
+    receipt_schema_version: "1.0.0",
+    receipt_type: "validation_dry_run",
+    generated_at: new Date().toISOString(),
+    actor: "afo-mobile-terminal-mcp",
+    invocation_method: args.invocation_method || "unspecified",
+    dry_run: true,
+    deployed: false,
+    production_deploy_attempted: false,
+    runtime_publish_attempted: false,
+    source,
+    result: { passed, errors: passed ? [] : checks.filter((c) => !c.passed).map((c) => c.name), warnings: [] },
+    checks,
+    preview_plan: buildPreviewPlan(source),
+    smoke_test_plan: buildSmokeTestPlan(),
+    write_back: { intended_path: source.receipt_path, command: "write_validation_receipt", status: "pending" }
+  };
+  if (!passed) {
+    receipt.write_back.status = "not_written_validation_failed";
+    return { ok: false, command: "write_validation_receipt", dry_run: true, deployed: false, receipt };
+  }
+  const write = await githubWriteJson(source, source.receipt_path, receipt, env);
+  receipt.write_back.status = write.ok ? "written" : "write_failed";
+  if (write.sha) receipt.write_back.sha = write.sha;
+  if (write.commit_sha) receipt.write_back.commit_sha = write.commit_sha;
+  return { ok: write.ok, command: "write_validation_receipt", dry_run: true, deployed: false, receipt, write_error: write.error || null };
+}
+
+function toolsList() {
+  return [
+    { name: "validate_bundle", description: "Validate AFO Site Bundle manifest from GitHub against the schema and preview safety gates.", blocked: false, guarded: false, write: false, inputSchema: siteBundleInputSchema("validate_bundle") },
+    { name: "validate_worker", description: "Validate the example Worker folder, scripts, wrangler config, and required routes.", blocked: false, guarded: false, write: false, inputSchema: siteBundleInputSchema("validate_worker") },
+    { name: "preview_plan", description: "Return a preview-only plan. Does not run preview or deploy.", blocked: false, guarded: false, write: false, inputSchema: siteBundleInputSchema("preview_plan") },
+    { name: "smoke_test_plan", description: "Return route checks for a future preview URL.", blocked: false, guarded: false, write: false, inputSchema: siteBundleInputSchema("smoke_test_plan") },
+    { name: "write_validation_receipt", description: "Write a dry-run validation receipt to GitHub. POST remains supported; GET/cmd fallback requires confirm=dry-run-receipt.", blocked: false, guarded: true, required_confirm: DRY_RUN_RECEIPT_CONFIRM, write: true, inputSchema: siteBundleInputSchema("write_validation_receipt") },
+    { name: "deploy_worker", description: "Blocked in this dry-run layer.", blocked: true, guarded: false, write: false, inputSchema: siteBundleInputSchema("deploy_worker") },
+    { name: "register_worker", description: "Blocked in this dry-run layer.", blocked: true, guarded: false, write: false, inputSchema: siteBundleInputSchema("register_worker") },
+    { name: "write_production_receipt", description: "Blocked in this dry-run layer.", blocked: true, guarded: false, write: false, inputSchema: siteBundleInputSchema("write_production_receipt") }
+  ];
+}
+
+function siteBundleInputSchema(name) {
+  return { type: "object", properties: { owner: { type: "string", default: DEFAULT_BUNDLE_SOURCE.owner }, repo: { type: "string", default: DEFAULT_BUNDLE_SOURCE.repo }, ref: { type: "string", default: DEFAULT_BUNDLE_SOURCE.ref }, bundle_path: { type: "string", default: DEFAULT_BUNDLE_SOURCE.bundle_path }, schema_path: { type: "string", default: DEFAULT_BUNDLE_SOURCE.schema_path }, worker_path: { type: "string", default: DEFAULT_BUNDLE_SOURCE.worker_path }, receipt_path: { type: "string", default: DEFAULT_BUNDLE_SOURCE.receipt_path }, confirm: { type: "string", description: "Required for GET/cmd write_validation_receipt: dry-run-receipt" } }, required: [], description: name === "write_validation_receipt" ? "Writes a dry-run validation receipt to GitHub. GET/cmd fallback requires confirm=dry-run-receipt. Does not deploy." : "Reads GitHub source-of-truth files and returns dry-run validation output." };
+}
+
+function guardedReceiptBlocked(invocation_method) {
+  return { ok: false, blocked: true, command: "write_validation_receipt", invocation_method, dry_run_only: true, deployed: false, receipt_written: false, required_confirm: DRY_RUN_RECEIPT_CONFIRM, message: "This GET/cmd write action requires confirm=dry-run-receipt. No receipt was written." };
+}
+
+function blockedProductionCommand(command) {
+  return { ok: false, blocked: true, command, dry_run_only: true, deployed: false, production_action_taken: false, reason: "This Mobile Terminal Site Bundle layer is dry-run only. Production requires deployment.confirmed = true and explicit operator approval in the current task. No production action was taken." };
+}
+
+function validateWrangler(checks, text) {
+  const guardedKeyPattern = new RegExp("^\\s*(sec" + "ret|sec" + "rets)\\s*=", "im");
+  const forbidden = [["routes", /^\s*routes?\s*=/m], ["route_table", /^\s*\[\[routes\]\]/m], ["account_id", /^\s*account_id\s*=/m], ["zone_id", /^\s*zone_id\s*=/m], ["custom_domain", /^\s*custom_domains?\s*=/m], ["vars_block", /^\s*\[vars\]/m], ["guarded_key", guardedKeyPattern]];
+  const found = forbidden.filter(([, pattern]) => pattern.test(text)).map(([name]) => name);
+  check(checks, "wrangler_preview_safety", found.length === 0, { forbidden_found: found });
+  check(checks, "wrangler_compatibility_date", /^\s*compatibility_date\s*=\s*["']2026-06-01["']/m.test(text), { expected: "2026-06-01" });
+}
+
+function validateWorkerRoutes(checks, source) {
+  for (const route of REQUIRED_WORKER_ROUTES) {
+    const supportsPath = source.includes(`'${route.path}'`) || source.includes(`"${route.path}"`) || source.includes(`\`${route.path}\``);
+    check(checks, `worker_route_${route.path}`, supportsPath, { path: route.path });
+    check(checks, `worker_content_type_${route.path}`, source.includes(route.expected_content_type), { expected_content_type: route.expected_content_type });
+  }
+  check(checks, "worker_health_ok_true", /ok:\s*true|"ok"\s*:\s*true/.test(source));
+}
+
+function buildPreviewPlan(source) { return { mode: "dry_run_only", allowed_command: "npm run preview", working_directory: source.worker_path, deployment_confirmed_required_for_production: true, deployment_confirmed_current_value: false, runtime_publish_blocked: true }; }
+function buildSmokeTestPlan() { return { mode: "plan_only", requires_preview_url: true, routes: REQUIRED_WORKER_ROUTES }; }
+function sourceFrom(args = {}, query) { const pick = (key) => args?.[key] ?? query?.get?.(key) ?? DEFAULT_BUNDLE_SOURCE[key]; return { owner: pick("owner"), repo: pick("repo"), ref: pick("ref"), bundle_path: pick("bundle_path"), schema_path: pick("schema_path"), worker_path: pick("worker_path"), receipt_path: pick("receipt_path") }; }
+async function githubReadJson(source, filePath, env) { const read = await githubReadText(source, filePath, env); if (!read.ok) return read; try { return { ok: true, json: JSON.parse(read.text), sha: read.sha || null }; } catch (err) { return { ok: false, error: `invalid_json:${filePath}:${String(err?.message || err)}` }; } }
+async function githubReadText(source, filePath, env) { const apiUrl = `https://api.github.com/repos/${source.owner}/${source.repo}/contents/${encodeURIComponentPath(filePath)}?ref=${encodeURIComponent(source.ref)}`; const response = await fetch(apiUrl, { headers: githubHeaders(env, false) }); if (!response.ok) return { ok: false, error: `github_read_failed:${filePath}:HTTP_${response.status}` }; const data = await response.json(); const text = typeof data.content === "string" ? atob(data.content.replace(/\n/g, "")) : ""; return { ok: true, text, sha: data.sha || null }; }
+async function githubWriteJson(source, filePath, value, env) { if (!env?.GITHUB_TOKEN) return { ok: false, error: "missing_github_token" }; const apiUrl = `https://api.github.com/repos/${source.owner}/${source.repo}/contents/${encodeURIComponentPath(filePath)}`; const headers = githubHeaders(env, true); let sha; const existing = await fetch(`${apiUrl}?ref=${encodeURIComponent(source.ref)}`, { headers }); if (existing.ok) { const data = await existing.json(); sha = data.sha; } const body = { message: "Write AFO Site Bundle dry-run validation receipt", branch: source.ref, content: btoa(JSON.stringify(value, null, 2) + "\n"), ...(sha ? { sha } : {}) }; const response = await fetch(apiUrl, { method: "PUT", headers, body: JSON.stringify(body) }); const json = await response.json().catch(() => ({})); return { ok: response.ok, status: response.status, sha: json.content?.sha || null, commit_sha: json.commit?.sha || null, error: response.ok ? null : json.message || `HTTP_${response.status}` }; }
+function githubHeaders(env, write) { const headers = { accept: "application/vnd.github+json", "user-agent": "afo-mobile-terminal-mcp-site-bundle" }; if (env?.GITHUB_TOKEN) headers.authorization = `Bearer ${env.GITHUB_TOKEN}`; if (write) headers["content-type"] = "application/json"; return headers; }
+function encodeURIComponentPath(filePath) { return filePath.split("/").map(encodeURIComponent).join("/"); }
+function validateRequiredTopLevel(bundle, schema) { if (!bundle || !schema?.required) return false; return schema.required.every((key) => Object.prototype.hasOwnProperty.call(bundle, key)); }
+function check(checks, name, passed, extra = {}) { checks.push({ name, passed: Boolean(passed), ...extra }); }
+function allPassed(checks) { return checks.every((item) => item.passed === true); }
+function result(ok, source, checks, errors = [], extra = {}) { return { ok, dry_run: true, deployed: false, source, checks, errors, ...extra }; }
+function healthPayload(env) { return { ok: true, worker: WORKER_NAME, version: VERSION, site_bundle_version: AFO_SITE_BUNDLE_VERSION, dry_run_only: true, deployed: false, runtime_publish_enabled: false, github_token: env?.GITHUB_TOKEN ? "configured" : "not_configured", routes: ROUTES, source: DEFAULT_BUNDLE_SOURCE }; }
+function cmdHelp(origin) { return { ok: true, worker: WORKER_NAME, version: VERSION, dry_run_only: true, description: "AFO Mobile Terminal dry-run command surface for AFO Site Bundle validation.", commands: AFO_SITE_BUNDLE_COMMANDS, examples: { validate_bundle: `${origin}/cmd/validate_bundle`, validate_worker: `${origin}/cmd/validate_worker`, preview_plan: `${origin}/cmd/preview_plan`, smoke_test_plan: `${origin}/cmd/smoke_test_plan`, guarded_write_validation_receipt: `${origin}/bundle/write-validation-receipt-action?confirm=dry-run-receipt`, guarded_cmd_write_validation_receipt: `${origin}/cmd/write_validation_receipt?confirm=dry-run-receipt`, blocked_deploy_worker: `${origin}/bundle/deploy-worker` }, routes: ROUTES, blocked_commands: ["deploy_worker", "register_worker", "write_production_receipt"] }; }
+function llmsText(origin) { return `# AFO Mobile Terminal MCP\n\nPreview-safe Mobile Terminal command surface for AFO Site Bundle dry-run validation.\n\nGuarded GET write action:\n- ${origin}/bundle/write-validation-receipt-action?confirm=dry-run-receipt\n\nBlocked commands:\n- deploy_worker\n- register_worker\n- write_production_receipt\n`; }
+function indexHtml(origin) { const rows = ROUTES.map((route) => `<li><code>${escapeHtml(route)}</code></li>`).join("\n"); return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>AFO Mobile Terminal MCP</title></head><body><main><h1>AFO Mobile Terminal MCP</h1><p>Preview-safe dry-run command surface for AFO Site Bundle validation.</p><p>No client-site deployment or runtime publish action is performed by this layer.</p><h2>Routes</h2><ul>${rows}</ul><h2>Quick links</h2><ul><li><a href="${origin}/bundle/validate">Validate bundle</a></li><li><a href="${origin}/bundle/worker/validate">Validate Worker</a></li><li><a href="${origin}/bundle/preview-plan">Preview plan</a></li><li><a href="${origin}/bundle/smoke-test-plan">Smoke-test plan</a></li><li><a href="${origin}/bundle/write-validation-receipt-action">Guarded receipt action without confirm (blocked)</a></li><li><a href="${origin}/tools/list">Tools list</a></li></ul></main></body></html>`; }
+function json(payload, status = 200) { return withCors(new Response(JSON.stringify(payload, null, 2), { status, headers: { "content-type": "application/json; charset=utf-8" } })); }
+function html(body, status = 200) { return withCors(new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8" } })); }
+function text(body, contentType, status = 200) { return withCors(new Response(body, { status, headers: { "content-type": contentType } })); }
+function withCors(response) { const headers = new Headers(response.headers); headers.set("access-control-allow-origin", "*"); headers.set("access-control-allow-methods", "GET,POST,OPTIONS"); headers.set("access-control-allow-headers", "content-type,authorization"); return new Response(response.body, { status: response.status, statusText: response.statusText, headers }); }
+async function safeJson(request) { try { return await request.json(); } catch { return {}; } }
+function escapeHtml(value) { return String(value).replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[char])); }
