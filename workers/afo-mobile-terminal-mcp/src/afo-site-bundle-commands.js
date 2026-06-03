@@ -4,6 +4,7 @@
 // It does not publish runtime changes, create routes, add domains, or change Cloudflare state.
 
 export const AFO_SITE_BUNDLE_VERSION = "1.0.0";
+export const DRY_RUN_RECEIPT_CONFIRM = "dry-run-receipt";
 
 export const DEFAULT_BUNDLE_SOURCE = Object.freeze({
   owner: "nothinginfinity",
@@ -59,7 +60,15 @@ export async function handleAfoSiteBundleHttp(request, env) {
 
   if (method === "POST" && url.pathname === "/bundle/write-validation-receipt") {
     const body = await safeJson(request);
-    return writeValidationReceipt({ args: body, env });
+    return writeValidationReceipt({ args: { ...body, invocation_method: "POST /bundle/write-validation-receipt" }, env });
+  }
+
+  if (method === "GET" && url.pathname === "/bundle/write-validation-receipt-action") {
+    if (url.searchParams.get("confirm") !== DRY_RUN_RECEIPT_CONFIRM) {
+      return guardedReceiptBlocked("GET /bundle/write-validation-receipt-action");
+    }
+    const args = Object.fromEntries(url.searchParams.entries());
+    return writeValidationReceipt({ args: { ...args, invocation_method: "GET guarded action" }, env });
   }
 
   if (method === "POST" && url.pathname === "/bundle/deploy-worker") {
@@ -88,7 +97,8 @@ export async function handleAfoSiteBundleCommand(name, args = {}, env = {}) {
     case "smoke_test_plan":
       return smokeTestPlan({ args });
     case "write_validation_receipt":
-      return writeValidationReceipt({ args, env });
+      if (args.confirm !== DRY_RUN_RECEIPT_CONFIRM) return guardedReceiptBlocked("cmd/write_validation_receipt");
+      return writeValidationReceipt({ args: { ...args, invocation_method: args.invocation_method || "GET /cmd/write_validation_receipt guarded action" }, env });
     case "deploy_worker":
     case "register_worker":
     case "write_production_receipt":
@@ -104,7 +114,7 @@ export function afoSiteBundleTools() {
     { name: "validate_worker", write: false, description: "Validate the example Worker folder, scripts, wrangler config, and required routes." },
     { name: "preview_plan", write: false, description: "Return a preview-only plan. Does not run preview or deploy." },
     { name: "smoke_test_plan", write: false, description: "Return route checks for a future preview URL." },
-    { name: "write_validation_receipt", write: true, description: "Write a dry-run validation receipt to the GitHub source-of-truth repo." },
+    { name: "write_validation_receipt", write: true, guarded: true, confirm: DRY_RUN_RECEIPT_CONFIRM, description: "Write a dry-run validation receipt to GitHub. POST is supported; GET/cmd fallback requires confirm=dry-run-receipt." },
     { name: "deploy_worker", write: false, blocked: true, description: "Blocked in this dry-run layer." },
     { name: "register_worker", write: false, blocked: true, description: "Blocked in this dry-run layer." },
     { name: "write_production_receipt", write: false, blocked: true, description: "Blocked in this dry-run layer." }
@@ -202,6 +212,7 @@ async function writeValidationReceipt({ args = {}, env }) {
     receipt_type: "validation_dry_run",
     generated_at: new Date().toISOString(),
     actor: "afo-mobile-terminal-mcp",
+    invocation_method: args.invocation_method || "unspecified",
     dry_run: true,
     deployed: false,
     production_deploy_attempted: false,
@@ -225,6 +236,20 @@ async function writeValidationReceipt({ args = {}, env }) {
   if (write.commit_sha) receipt.write_back.commit_sha = write.commit_sha;
 
   return { ok: write.ok, command: "write_validation_receipt", dry_run: true, deployed: false, receipt, write_error: write.error || null };
+}
+
+function guardedReceiptBlocked(invocation_method) {
+  return {
+    ok: false,
+    blocked: true,
+    command: "write_validation_receipt",
+    invocation_method,
+    dry_run_only: true,
+    deployed: false,
+    receipt_written: false,
+    required_confirm: DRY_RUN_RECEIPT_CONFIRM,
+    message: "This GET/cmd write action requires confirm=dry-run-receipt. No receipt was written."
+  };
 }
 
 function blockedProductionCommand(command) {
