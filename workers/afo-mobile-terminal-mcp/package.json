@@ -1,11 +1,12 @@
 {
   "name": "afo-mobile-terminal-mcp",
-  "version": "0.2.5",
-  "description": "Command-center terminal MCP. Orchestrates deploy, smoke test, registry, handoff, and Cloudflare inventory for AFO mobile workflows.",
+  "version": "0.2.8",
+  "description": "Command-center terminal MCP. Orchestrates preview-safe dry-run validation, smoke test planning, registry, handoff, and Cloudflare inventory for AFO mobile workflows.",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "check": "node -c src/index.js && node -c src/afo-site-bundle-commands.js",
+    "deploy": "echo 'Blocked: use preview-safe validation routes only unless an operator-confirmed production workflow is requested.' && exit 1"
   },
   "devDependencies": {
     "wrangler": "^3.0.0"
