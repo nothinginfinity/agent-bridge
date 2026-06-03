@@ -1,69 +1,93 @@
-# AFO Site Bundle dry-run commands
+# AFO Site Bundle dry-run and preview commands
 
-AFO Mobile Terminal exposes preview-safe commands for validating an AFO Site Bundle from GitHub and writing dry-run evidence receipts.
+AFO Mobile Terminal exposes preview-safe commands for validating AFO Site Bundle records from GitHub, writing dry-run evidence receipts, and triggering a guarded preview-only Worker deployment.
 
-## Guarded receipt writing
+## Validation commands
 
-Real HTTP clients may use:
+- `validate_bundle`
+- `validate_worker`
+- `preview_plan`
+- `smoke_test_plan`
+- `write_validation_receipt`
 
-```text
-POST /bundle/write-validation-receipt
-```
-
-Agent/mobile clients that cannot reliably send POST may use:
+Read-only commands may be called through GET routes. Receipt writing requires the dry-run confirmation guard:
 
 ```text
 GET /bundle/write-validation-receipt-action?confirm=dry-run-receipt
 ```
 
-The GET action is blocked unless the exact confirmation query parameter is present.
+## Preview deployment command
 
-Dry-run validation receipts are evidence receipts. They should be written whether validation passes or fails. The receipt must preserve the truth of validation:
+`deploy_preview_worker` is a guarded preview-only command.
 
-- `result.passed` is `true` only when validation passes.
-- `result.errors` lists failed validation checks.
-- `checks` contains the full validation check list.
-- `write_back.status` is `written_validation_passed` when validation passes.
-- `write_back.status` is `written_validation_failed` when validation fails.
+HTTP route:
 
-Receipts remain dry-run only and include:
+```text
+GET /bundle/deploy-preview-worker-action?confirm=preview-deploy
+```
 
-- `dry_run: true`
-- `deployed: false`
+Sample restaurant example:
+
+```text
+GET /bundle/deploy-preview-worker-action?confirm=preview-deploy&bundle_path=examples/sample-restaurant/afo.site.bundle.json&worker_path=examples/sample-restaurant/worker&receipt_path=receipts/sample-restaurant.preview-deploy.json
+```
+
+The command is allowed only for preview deployment to the Worker `workers.dev` runtime. It must not attach a custom domain, must not create production routes, must not add account identifiers, must not add protected runtime values, and must not set `deployment.confirmed` to `true`.
+
+For the sample restaurant flow, the expected Worker name is:
+
+```text
+sample-restaurant-afo
+```
+
+Expected preview receipt path:
+
+```text
+receipts/sample-restaurant.preview-deploy.json
+```
+
+Preview receipts include:
+
+- `receipt_type: preview_deploy`
+- `dry_run: false`
+- `preview_deploy: true`
+- `production_deploy: false`
+- `deployed: true`
 - `production_deploy_attempted: false`
-- `runtime_publish_attempted: false`
+- `runtime_publish_attempted: true`
+- `custom_domain_added: false`
+- `production_route_added: false`
+- `deployment_confirmed_changed: false`
 - source repo info
-- preview plan
-- smoke-test plan
-- generated timestamp
+- bundle path
+- Worker path
+- preview URL
+- smoke-test results
+- timestamp
 - actor
-- invocation method
+- Cloudflare Worker name
+- deploy receipt/id if available
 
-## `/cmd` guard
+## Source parameters
 
-Read-only commands remain GET-accessible:
+All safe commands accept optional source parameters:
 
-```text
-/cmd/validate_bundle
-/cmd/validate_worker
-/cmd/preview_plan
-/cmd/smoke_test_plan
-```
+- `owner`
+- `repo`
+- `ref`
+- `bundle_path`
+- `schema_path`
+- `worker_path`
+- `receipt_path`
 
-The write command requires confirmation:
+Unsafe source input is blocked before GitHub reads or writes.
 
-```text
-/cmd/write_validation_receipt?confirm=dry-run-receipt
-```
+## Blocked production commands
 
-Without confirmation, it returns a blocked response and writes nothing.
-
-## Blocked commands
-
-These commands remain blocked/no-op in this dry-run layer:
+These commands remain blocked/no-op:
 
 - `deploy_worker`
 - `register_worker`
 - `write_production_receipt`
 
-They return blocked responses and take no production action.
+Production deployment, production registration, custom domains, and production receipts are not part of this layer.
