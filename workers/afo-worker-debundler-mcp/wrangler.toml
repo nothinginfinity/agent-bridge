@@ -1,0 +1,10 @@
+name = "afo-worker-debundler-mcp"
+main = "src/worker.js"
+compatibility_date = "2024-01-01"
+workers_dev = true
+
+[vars]
+DEFAULT_OWNER = "nothinginfinity"
+
+# Secrets — set via Cloudflare dashboard:
+#   GITHUB_TOKEN
