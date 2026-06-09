@@ -52,32 +52,69 @@ async function cloudflareD1Query(env, args, sql, params = []) {
   return body;
 }
 
+// Upserts rows into site_content using the AFO schema: section, data, updated_at
+// The mapper returns { key, value, type } rows — we map key→section, value→data.
+// For the contact section we merge all scalar fields into one JSON blob.
 async function upsertSiteContentRows(env, args, rows) {
-  const mode  = args.mode  || "replace_keys";
   const table = args.table || "site_content";
   const now   = new Date().toISOString();
   const written = [];
+
+  // Collect scalar fields (company_name, phone, email, etc.) into a contact blob
+  const contactFields = ["company_name", "phone", "email", "address", "website",
+                         "primary_color", "secondary_color", "accent_color"];
+  const contactBlob = {};
+  const otherRows   = [];
+
   for (const row of rows) {
-    const key = args.key_prefix ? `${args.key_prefix}${row.key}` : row.key;
-    if (mode === "insert_only") {
-      await cloudflareD1Query(env, args,
-        `INSERT INTO ${table} (key, value, type, updated_at) VALUES (?, ?, ?, ?)`,
-        [key, row.value, row.type || "text", now]
-      );
+    if (contactFields.includes(row.key)) {
+      contactBlob[row.key] = row.value;
     } else {
-      await cloudflareD1Query(env, args,
-        `INSERT INTO ${table} (key, value, type, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, type = excluded.type, updated_at = excluded.updated_at`,
-        [key, row.value, row.type || "text", now]
-      );
+      otherRows.push(row);
     }
-    written.push(key);
   }
+
+  // Upsert contact section if we have any contact fields
+  if (Object.keys(contactBlob).length > 0) {
+    // Read existing contact row and merge so we don't clobber unrelated fields
+    let existing = {};
+    try {
+      const res = await cloudflareD1Query(env, args,
+        `SELECT data FROM ${table} WHERE section = ?`, ["contact"]);
+      const dataStr = res.results?.[0]?.[0]?.data || res.results?.[0]?.data;
+      if (dataStr) existing = JSON.parse(dataStr);
+    } catch { /* no existing row, start fresh */ }
+
+    const merged = { ...existing, ...contactBlob };
+    await cloudflareD1Query(env, args,
+      `INSERT INTO ${table} (section, data, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(section) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
+      ["contact", JSON.stringify(merged), now]
+    );
+    written.push("contact");
+  }
+
+  // Upsert remaining sections (services, hours, business_profile etc.)
+  for (const row of otherRows) {
+    const section = row.key;
+    const data    = row.type === "json" ? row.value : JSON.stringify(row.value);
+    await cloudflareD1Query(env, args,
+      `INSERT INTO ${table} (section, data, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(section) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
+      [section, data, now]
+    );
+    written.push(section);
+  }
+
   return written;
 }
 
+// Trigger snapshot — AFO contractor template uses /api/publish
 async function triggerSnapshot(args) {
-  const url = args.snapshot_url ||
-    (args.target_worker_url && `${String(args.target_worker_url).replace(/\/$/, "")}/api/admin/snapshot`);
+  const base = args.target_worker_url
+    ? String(args.target_worker_url).replace(/\/$/, "")
+    : null;
+  const url  = args.snapshot_url || (base && `${base}/api/publish`);
   if (!url) return { ok: false, skipped: true, reason: "missing_snapshot_url" };
   const headers = { "content-type": "application/json" };
   if (args.admin_token)    headers.authorization       = `Bearer ${args.admin_token}`;
@@ -91,6 +128,8 @@ async function triggerSnapshot(args) {
   return { ok: response.ok, status: response.status, body: body.slice(0, 2000) };
 }
 
+// ── Tools ─────────────────────────────────────────────────────────────────────
+
 const tools = [
   {
     name: "inject_status",
@@ -99,22 +138,21 @@ const tools = [
   },
   {
     name: "inject_business_data",
-    description: "Write normalized business data into a target Cloudflare D1 site_content table. Requires confirm_write: true.",
+    description: "Write normalized business data into a target Cloudflare D1 site_content table and trigger a snapshot rebuild via /api/publish. Requires confirm_write: true.",
     inputSchema: {
       type: "object",
       properties: {
         confirm_write:     { type: "boolean", description: "Must be true to execute writes." },
         business:          { type: "object",  description: "Raw or normalized business data from DocParse." },
         normalized:        { type: "object",  description: "Pre-normalized business data (alternative to business)." },
-        account_id:        { type: "string",  description: "Cloudflare account ID." },
-        api_token:         { type: "string",  description: "Cloudflare API token." },
+        account_id:        { type: "string",  description: "Cloudflare account ID. Falls back to CLOUDFLARE_ACCOUNT_ID secret." },
+        api_token:         { type: "string",  description: "Cloudflare API token. Falls back to CLOUDFLARE_API_TOKEN secret." },
         d1_database_id:    { type: "string",  description: "Target D1 database UUID." },
         table:             { type: "string",  description: "Table name. Default: site_content." },
-        key_prefix:        { type: "string",  description: "Optional prefix for all written keys." },
         mode:              { type: "string",  description: "replace_keys (default) or insert_only." },
-        trigger_snapshot:  { type: "boolean", description: "Trigger snapshot rebuild after write. Default: true." },
-        target_worker_url: { type: "string",  description: "Base URL of the demo worker." },
-        snapshot_url:      { type: "string",  description: "Explicit snapshot endpoint URL." },
+        trigger_snapshot:  { type: "boolean", description: "Trigger /api/publish after write. Default: true." },
+        target_worker_url: { type: "string",  description: "Base URL of the demo worker (e.g. https://contractor-v005-dev.jaredtechfit.workers.dev)." },
+        snapshot_url:      { type: "string",  description: "Override snapshot URL (default: target_worker_url + /api/publish)." },
         admin_token:       { type: "string",  description: "Bearer token for snapshot auth." },
         admin_password:    { type: "string",  description: "x-admin-password header value." }
       },
@@ -123,7 +161,7 @@ const tools = [
   },
   {
     name: "trigger_snapshot",
-    description: "Trigger a snapshot rebuild on a cloned demo worker. Requires confirm_write: true.",
+    description: "Trigger a snapshot rebuild on a cloned demo worker via /api/publish. Requires confirm_write: true.",
     inputSchema: {
       type: "object",
       properties: {
@@ -140,7 +178,7 @@ const tools = [
 
 async function callTool(env, name, args = {}) {
   if (name === "inject_status") {
-    return { ok: true, worker: env.MCP_SERVER_NAME || "afo-biz-inject-mcp", version: env.MCP_SERVER_VERSION || "0.1.0", tools: tools.map(t => t.name) };
+    return { ok: true, worker: env.MCP_SERVER_NAME || "afo-biz-inject-mcp", version: env.MCP_SERVER_VERSION || "0.2.0", tools: tools.map(t => t.name) };
   }
   if (name === "trigger_snapshot") {
     assertWriteAllowed(args);
@@ -156,9 +194,11 @@ async function callTool(env, name, args = {}) {
   throw new Error(`unknown_tool:${name}`);
 }
 
+// ── MCP protocol handler ──────────────────────────────────────────────────────
+
 async function handleMcp(request, env) {
   if (request.method === "GET") {
-    return json({ ok: true, name: env.MCP_SERVER_NAME || "afo-biz-inject-mcp", version: env.MCP_SERVER_VERSION || "0.1.0", tools });
+    return json({ ok: true, name: env.MCP_SERVER_NAME || "afo-biz-inject-mcp", version: env.MCP_SERVER_VERSION || "0.2.0", tools });
   }
   if (request.method !== "POST") return methodNotAllowed();
 
@@ -172,7 +212,7 @@ async function handleMcp(request, env) {
       result: {
         protocolVersion: "2024-11-05",
         capabilities:    { tools: {} },
-        serverInfo:      { name: env.MCP_SERVER_NAME || "afo-biz-inject-mcp", version: env.MCP_SERVER_VERSION || "0.1.0" }
+        serverInfo:      { name: env.MCP_SERVER_NAME || "afo-biz-inject-mcp", version: env.MCP_SERVER_VERSION || "0.2.0" }
       }
     });
   }
@@ -199,10 +239,14 @@ async function handleMcp(request, env) {
   return json({ ok: false, error: "unsupported_mcp_method", supported: ["initialize", "tools/list", "tools/call"] }, 400);
 }
 
+// ── HTTP router ───────────────────────────────────────────────────────────────
+
 async function handleHttp(request, env) {
   const url = new URL(request.url);
   if (request.method === "OPTIONS") return new Response(null, { headers: getCorsHeaders() });
-  if (url.pathname === "/" || url.pathname === "/health" || url.pathname === "/status") return json(await callTool(env, "inject_status", {}));
+  if (url.pathname === "/" || url.pathname === "/health" || url.pathname === "/status") {
+    return json(await callTool(env, "inject_status", {}));
+  }
   if (url.pathname === "/mcp")        return handleMcp(request, env);
   if (url.pathname === "/tools/list") return json({ tools });
   if (url.pathname === "/tools/call") {
