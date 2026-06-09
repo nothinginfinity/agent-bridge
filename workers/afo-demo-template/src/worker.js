@@ -1,0 +1,1 @@
+// See /home/claude/afo-demo-template.js — pushed separately due to size
