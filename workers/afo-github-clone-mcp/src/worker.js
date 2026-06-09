@@ -1,16 +1,13 @@
 // ============================================================
-// afo-github-clone-mcp  v1.2.0
-// v1.2.0: adds name_only_files — files where replacements apply
-//         only to lines starting with `name =` (e.g. wrangler.toml),
-//         leaving binding values, index names, db names untouched.
-//
-// Required bindings:
-//   GITHUB_TOKEN   (secret) — GitHub PAT with repo read+write
-//   DEFAULT_OWNER  (text)   — default GitHub org/user
+// afo-github-clone-mcp  v1.3.0
+// v1.3.0: wrangler.toml smart replacement —
+//   - `name =` lines: full replacement (worker name)
+//   - `DEMO_SLUG =` lines: full replacement (tenant slug)
+//   - all other lines: untouched (bindings, db IDs, etc.)
 // ============================================================
 
 const NAME    = 'afo-github-clone-mcp';
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -74,29 +71,13 @@ async function repoExists(env, owner, repo) {
 
 async function createRepo(env, owner, repo, opts = {}) {
   const body = {
-    name:         repo,
-    description:  opts.description || '',
-    private:      opts.private !== false,
-    auto_init:    false,
-    has_issues:   true,
-    has_projects: false,
-    has_wiki:     false,
+    name: repo, description: opts.description || '', private: opts.private !== false,
+    auto_init: false, has_issues: true, has_projects: false, has_wiki: false,
   };
   let result;
-  try {
-    result = await gh(env, 'POST', `/orgs/${owner}/repos`, body);
-  } catch {
-    result = await gh(env, 'POST', `/user/repos`, body);
-  }
-  return {
-    created:        true,
-    repo:           result.name,
-    owner:          result.owner?.login,
-    full_name:      result.full_name,
-    private:        result.private,
-    html_url:       result.html_url,
-    default_branch: result.default_branch || 'main',
-  };
+  try { result = await gh(env, 'POST', `/orgs/${owner}/repos`, body); }
+  catch { result = await gh(env, 'POST', `/user/repos`, body); }
+  return { created: true, repo: result.name, owner: result.owner?.login, full_name: result.full_name, private: result.private, html_url: result.html_url, default_branch: result.default_branch || 'main' };
 }
 
 // ── File helpers ──────────────────────────────────────────────────────────────
@@ -106,9 +87,7 @@ async function getFileSHA(env, owner, repo, path, branch) {
     const ref = branch ? `?ref=${encodeURIComponent(branch)}` : '';
     const r = await gh(env, 'GET', `/repos/${owner}/${repo}/contents/${encodePath(path)}${ref}`);
     return r.sha || null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 async function readFile(env, owner, repo, path, branch) {
@@ -123,27 +102,15 @@ async function listTree(env, owner, repo, treePath, branch) {
   const treeSHA    = branchData.commit.commit.tree.sha;
   const tree       = await gh(env, 'GET', `/repos/${owner}/${repo}/git/trees/${treeSHA}?recursive=1`);
   const prefix     = treePath ? treePath.replace(/\/$/, '') + '/' : '';
-  return tree.tree
-    .filter(item => item.type === 'blob' && item.path.startsWith(prefix))
-    .map(item => item.path);
+  return tree.tree.filter(item => item.type === 'blob' && item.path.startsWith(prefix)).map(item => item.path);
 }
 
 async function writeFile(env, owner, repo, path, content, branch, message) {
   const sha  = await getFileSHA(env, owner, repo, path, branch);
-  const body = {
-    message: message || `clone: write ${path}`,
-    content: b64encode(content),
-    branch:  branch || 'main',
-  };
+  const body = { message: message || `clone: write ${path}`, content: b64encode(content), branch: branch || 'main' };
   if (sha) body.sha = sha;
   const r = await gh(env, 'PUT', `/repos/${owner}/${repo}/contents/${encodePath(path)}`, body);
-  return {
-    path,
-    sha:        r.content?.sha,
-    commit_sha: r.commit?.sha,
-    commit_url: r.commit?.html_url,
-    action:     sha ? 'updated' : 'created',
-  };
+  return { path, sha: r.content?.sha, commit_sha: r.commit?.sha, commit_url: r.commit?.html_url, action: sha ? 'updated' : 'created' };
 }
 
 // ── Replacement helpers ───────────────────────────────────────────────────────
@@ -159,16 +126,22 @@ function applyReplacements(content, replacements) {
   return out;
 }
 
-// Name-only replacement: only replace on lines that start with `name =`
-// Leaves database_name, index_name, bucket_name, binding values etc. untouched.
-function applyNameOnlyReplacements(content, replacements) {
+// Smart wrangler.toml replacement:
+// - Lines starting with `name =`      → full replacement (worker name)
+// - Lines starting with `DEMO_SLUG =` → full replacement (tenant slug var)
+// - Lines starting with any key in toml_replace_vars → full replacement
+// - All other lines                   → untouched (bindings, DB IDs, etc.)
+function applyTomlReplacements(content, replacements, tomlReplaceVars = []) {
   if (!Array.isArray(replacements) || !replacements.length) return content;
+  // Always replace on name = and DEMO_SLUG = lines, plus any caller-specified vars
+  const replaceableVarPatterns = [
+    /^\s*name\s*=/,
+    /^\s*DEMO_SLUG\s*=/,
+    ...tomlReplaceVars.map(v => new RegExp('^\\s*' + v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*=')),
+  ];
   return content.split('\n').map(line => {
-    // Only touch lines like: name = "contractor-v005-dev"
-    if (/^\s*name\s*=/.test(line)) {
-      return applyReplacements(line, replacements);
-    }
-    return line;
+    const shouldReplace = replaceableVarPatterns.some(pat => pat.test(line));
+    return shouldReplace ? applyReplacements(line, replacements) : line;
   }).join('\n');
 }
 
@@ -178,28 +151,25 @@ async function toolCreateRepo(args, env) {
   const owner = args.owner || env.DEFAULT_OWNER || 'nothinginfinity';
   if (!args.repo) throw new Error('repo is required');
   const exists = await repoExists(env, owner, args.repo);
-  if (exists) {
-    return { created: false, repo: args.repo, owner, note: 'Repo already exists — no action taken.', html_url: `https://github.com/${owner}/${args.repo}` };
-  }
+  if (exists) return { created: false, repo: args.repo, owner, note: 'Repo already exists — no action taken.', html_url: `https://github.com/${owner}/${args.repo}` };
   return createRepo(env, owner, args.repo, { description: args.description || '', private: args.private !== false });
 }
 
 async function cloneRepoPath(args, env) {
-  const defaultOwner  = env.DEFAULT_OWNER || 'nothinginfinity';
-  const srcOwner      = args.src_owner  || defaultOwner;
-  const srcRepo       = args.src_repo;
-  const srcPath       = args.src_path   || '';
-  const srcBranch     = args.src_branch || 'main';
-  const dstOwner      = args.dst_owner  || srcOwner;
-  const dstRepo       = args.dst_repo;
-  const dstPath       = args.dst_path   || srcPath;
-  const dstBranch     = args.dst_branch || 'main';
-  const replacements  = args.replacements   || [];
-  const excludeGlobs  = args.exclude_files  || [];
-  // Files where replacements only apply to `name =` lines. wrangler.toml always included.
-  const nameOnlyFiles = ['wrangler.toml', ...(args.name_only_files || [])];
-  const commitMessage = args.commit_message || `clone: ${srcRepo}/${srcPath} → ${dstRepo}/${dstPath}`;
-  const autoCreate    = args.auto_create_repo !== false;
+  const defaultOwner   = env.DEFAULT_OWNER || 'nothinginfinity';
+  const srcOwner       = args.src_owner  || defaultOwner;
+  const srcRepo        = args.src_repo;
+  const srcPath        = args.src_path   || '';
+  const srcBranch      = args.src_branch || 'main';
+  const dstOwner       = args.dst_owner  || srcOwner;
+  const dstRepo        = args.dst_repo;
+  const dstPath        = args.dst_path   || srcPath;
+  const dstBranch      = args.dst_branch || 'main';
+  const replacements   = args.replacements     || [];
+  const excludeGlobs   = args.exclude_files    || [];
+  const tomlVars       = args.toml_replace_vars || []; // extra wrangler.toml var keys to replace
+  const commitMessage  = args.commit_message   || `clone: ${srcRepo}/${srcPath} → ${dstRepo}/${dstPath}`;
+  const autoCreate     = args.auto_create_repo !== false;
 
   if (!srcRepo) throw new Error('src_repo is required');
   if (!dstRepo) throw new Error('dst_repo is required');
@@ -207,7 +177,7 @@ async function cloneRepoPath(args, env) {
   let repoCreated = false;
   const exists = await repoExists(env, dstOwner, dstRepo);
   if (!exists) {
-    if (!autoCreate) throw new Error(`Destination repo ${dstOwner}/${dstRepo} does not exist. Set auto_create_repo: true to create it.`);
+    if (!autoCreate) throw new Error(`Destination repo ${dstOwner}/${dstRepo} does not exist.`);
     await createRepo(env, dstOwner, dstRepo, { description: `Clone of ${srcOwner}/${srcRepo}`, private: true });
     repoCreated = true;
   }
@@ -229,42 +199,29 @@ async function cloneRepoPath(args, env) {
       const relativePath = srcFilePath.slice(srcPath.replace(/\/$/, '').length).replace(/^\//, '');
       const dstFilePath  = dstPath ? `${dstPath.replace(/\/$/, '')}/${relativePath}` : relativePath;
       const finalDstPath = applyReplacements(dstFilePath, replacements);
+      const filename     = srcFilePath.split('/').pop();
 
-      // For name_only_files, only replace on `name =` lines; otherwise full replacement
-      const filename   = srcFilePath.split('/').pop();
-      const nameOnly   = nameOnlyFiles.includes(filename);
-      const newContent = nameOnly
-        ? applyNameOnlyReplacements(content, replacements)
+      // wrangler.toml gets smart replacement; everything else gets full replacement
+      const isToml     = filename === 'wrangler.toml';
+      const newContent = isToml
+        ? applyTomlReplacements(content, replacements, tomlVars)
         : applyReplacements(content, replacements);
 
       const writeResult = await writeFile(env, dstOwner, dstRepo, finalDstPath, newContent, dstBranch, commitMessage);
-      results.push({
-        src:       srcFilePath,
-        dst:       finalDstPath,
-        mode:      nameOnly ? 'name_only' : 'full',
-        action:    writeResult.action,
-        sha:       writeResult.sha,
-        commit:    writeResult.commit_sha,
-      });
+      results.push({ src: srcFilePath, dst: finalDstPath, mode: isToml ? 'toml_smart' : 'full', action: writeResult.action, sha: writeResult.sha, commit: writeResult.commit_sha });
     } catch (e) {
       errors.push({ path: srcFilePath, error: e.message });
     }
   }
 
   return {
-    ok:             errors.length === 0,
-    repo_created:   repoCreated,
-    src:            `${srcOwner}/${srcRepo}:${srcPath}@${srcBranch}`,
-    dst:            `${dstOwner}/${dstRepo}:${dstPath}@${dstBranch}`,
-    dst_url:        `https://github.com/${dstOwner}/${dstRepo}`,
-    replacements:   replacements.length,
-    name_only_files: nameOnlyFiles,
-    files_found:    toClone.length,
-    files_cloned:   results.length,
-    files_errored:  errors.length,
-    results,
-    errors,
-    commit_message: commitMessage,
+    ok: errors.length === 0, repo_created: repoCreated,
+    src: `${srcOwner}/${srcRepo}:${srcPath}@${srcBranch}`,
+    dst: `${dstOwner}/${dstRepo}:${dstPath}@${dstBranch}`,
+    dst_url: `https://github.com/${dstOwner}/${dstRepo}`,
+    replacements: replacements.length, files_found: toClone.length,
+    files_cloned: results.length, files_errored: errors.length,
+    results, errors, commit_message: commitMessage,
   };
 }
 
@@ -284,48 +241,25 @@ async function cloneSingleFile(args, env) {
   const newContent  = applyReplacements(content, args.replacements || []);
   const message     = args.commit_message || `clone: ${srcFile} → ${dstFile}`;
   const result      = await writeFile(env, dstOwner, dstRepo, dstFile, newContent, dstBranch, message);
-  return {
-    ok: true,
-    src: `${srcOwner}/${srcRepo}:${srcFile}@${srcBranch}`,
-    dst: `${dstOwner}/${dstRepo}:${dstFile}@${dstBranch}`,
-    action: result.action, sha: result.sha, commit_sha: result.commit_sha, commit_url: result.commit_url,
-    replacements: (args.replacements || []).length,
-    src_bytes: new TextEncoder().encode(content).length,
-    dst_bytes: new TextEncoder().encode(newContent).length,
-  };
+  return { ok: true, src: `${srcOwner}/${srcRepo}:${srcFile}@${srcBranch}`, dst: `${dstOwner}/${dstRepo}:${dstFile}@${dstBranch}`, action: result.action, sha: result.sha, commit_sha: result.commit_sha, commit_url: result.commit_url, replacements: (args.replacements || []).length, src_bytes: new TextEncoder().encode(content).length, dst_bytes: new TextEncoder().encode(newContent).length };
 }
 
 async function previewReplacements(args, env) {
-  const owner  = args.owner  || env.DEFAULT_OWNER || 'nothinginfinity';
+  const owner = args.owner || env.DEFAULT_OWNER || 'nothinginfinity';
   if (!args.repo) throw new Error('repo is required');
   if (!args.file) throw new Error('file is required');
   const { content }  = await readFile(env, owner, args.repo, args.file, args.branch || 'main');
   const replacements = args.replacements || [];
-  const hits = replacements.map(({ from, to }) => ({
-    from, to,
-    count:  content.split(from).length - 1,
-    sample: (() => { const idx = content.indexOf(from); if (idx === -1) return null; return content.slice(Math.max(0, idx - 40), idx + (from?.length || 0) + 40); })(),
-  }));
+  const hits = replacements.map(({ from, to }) => ({ from, to, count: content.split(from).length - 1, sample: (() => { const idx = content.indexOf(from); if (idx === -1) return null; return content.slice(Math.max(0, idx - 40), idx + (from?.length || 0) + 40); })() }));
   const newContent = applyReplacements(content, replacements);
-  return {
-    ok: true,
-    file: `${owner}/${args.repo}:${args.file}@${args.branch || 'main'}`,
-    src_bytes: new TextEncoder().encode(content).length,
-    dst_bytes: new TextEncoder().encode(newContent).length,
-    total_hits: hits.reduce((s, h) => s + h.count, 0),
-    replacements: hits,
-    note: 'This is a dry run — no files were written.',
-  };
+  return { ok: true, file: `${owner}/${args.repo}:${args.file}@${args.branch || 'main'}`, src_bytes: new TextEncoder().encode(content).length, dst_bytes: new TextEncoder().encode(newContent).length, total_hits: hits.reduce((s, h) => s + h.count, 0), replacements: hits, note: 'Dry run — no files written.' };
 }
 
 function cloneStatus(env) {
-  return {
-    worker: NAME, version: VERSION, status: 'ok',
-    bindings: { GITHUB_TOKEN: Boolean(env.GITHUB_TOKEN), DEFAULT_OWNER: Boolean(env.DEFAULT_OWNER) },
-    default_owner: env.DEFAULT_OWNER || null,
-    tools: TOOLS.map(t => t.name),
-  };
+  return { worker: NAME, version: VERSION, status: 'ok', bindings: { GITHUB_TOKEN: Boolean(env.GITHUB_TOKEN), DEFAULT_OWNER: Boolean(env.DEFAULT_OWNER) }, default_owner: env.DEFAULT_OWNER || null, tools: TOOLS.map(t => t.name) };
 }
+
+// ── Tool schemas ──────────────────────────────────────────────────────────────
 
 const REPLACEMENTS_SCHEMA = {
   type: 'array',
@@ -334,45 +268,33 @@ const REPLACEMENTS_SCHEMA = {
 };
 
 const TOOLS = [
-  { name: 'clone_status', description: 'Health check — confirms GITHUB_TOKEN is bound and lists available tools.', inputSchema: { type: 'object', properties: {}, required: [] } },
-  {
-    name: 'create_repo',
-    description: 'Create a new GitHub repository. Idempotent — if repo already exists, returns its info without error.',
-    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, owner: { type: 'string' }, description: { type: 'string' }, private: { type: 'boolean' } }, required: ['repo'] },
-  },
+  { name: 'clone_status', description: 'Health check.', inputSchema: { type: 'object', properties: {}, required: [] } },
+  { name: 'create_repo', description: 'Create a new GitHub repository. Idempotent.', inputSchema: { type: 'object', properties: { repo: { type: 'string' }, owner: { type: 'string' }, description: { type: 'string' }, private: { type: 'boolean' } }, required: ['repo'] } },
   {
     name: 'clone_repo_path',
-    description: 'Clone all files from a source repo directory into a destination repo. Auto-creates dst_repo if needed. wrangler.toml is always treated as name_only (replacements apply only to `name =` lines, leaving binding values untouched). No file size limits.',
+    description: 'Clone all files from a source repo directory into a destination repo. Auto-creates dst_repo if needed. wrangler.toml gets smart replacement: name = and DEMO_SLUG = lines are fully replaced, all other lines (DB IDs, binding names, etc.) are left untouched. No file size limits.',
     inputSchema: {
       type: 'object',
       properties: {
         src_repo: { type: 'string' }, src_path: { type: 'string' }, src_owner: { type: 'string' }, src_branch: { type: 'string' },
         dst_repo: { type: 'string' }, dst_path: { type: 'string' }, dst_owner: { type: 'string' }, dst_branch: { type: 'string' },
-        replacements:     REPLACEMENTS_SCHEMA,
-        exclude_files:    { type: 'array', items: { type: 'string' }, description: 'Filenames to skip entirely.' },
-        name_only_files:  { type: 'array', items: { type: 'string' }, description: 'Extra filenames where replacements apply only to `name =` lines. wrangler.toml is always included.' },
-        commit_message:   { type: 'string' },
-        auto_create_repo: { type: 'boolean', description: 'Create dst_repo if it does not exist. Default: true.' },
+        replacements:      REPLACEMENTS_SCHEMA,
+        exclude_files:     { type: 'array', items: { type: 'string' }, description: 'Filenames to skip entirely.' },
+        toml_replace_vars: { type: 'array', items: { type: 'string' }, description: 'Additional wrangler.toml var key names to apply replacements on (e.g. ["MY_VAR"]). DEMO_SLUG and name are always included.' },
+        commit_message:    { type: 'string' },
+        auto_create_repo:  { type: 'boolean', description: 'Create dst_repo if missing. Default: true.' },
       },
       required: ['src_repo', 'dst_repo'],
     },
   },
   {
     name: 'clone_single_file',
-    description: 'Clone one file from src to dst with optional replacements. Handles any file size.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        src_repo: { type: 'string' }, src_file: { type: 'string' }, src_owner: { type: 'string' }, src_branch: { type: 'string' },
-        dst_repo: { type: 'string' }, dst_file: { type: 'string' }, dst_owner: { type: 'string' }, dst_branch: { type: 'string' },
-        replacements: REPLACEMENTS_SCHEMA, commit_message: { type: 'string' },
-      },
-      required: ['src_repo', 'src_file'],
-    },
+    description: 'Clone one file with optional replacements. Handles any file size.',
+    inputSchema: { type: 'object', properties: { src_repo: { type: 'string' }, src_file: { type: 'string' }, src_owner: { type: 'string' }, src_branch: { type: 'string' }, dst_repo: { type: 'string' }, dst_file: { type: 'string' }, dst_owner: { type: 'string' }, dst_branch: { type: 'string' }, replacements: REPLACEMENTS_SCHEMA, commit_message: { type: 'string' } }, required: ['src_repo', 'src_file'] },
   },
   {
     name: 'preview_replacements',
-    description: 'Dry-run replacements against a file — shows hit counts and context. Run before clone_repo_path to verify.',
+    description: 'Dry-run replacements against a file — shows hit counts and context.',
     inputSchema: { type: 'object', properties: { repo: { type: 'string' }, file: { type: 'string' }, owner: { type: 'string' }, branch: { type: 'string' }, replacements: REPLACEMENTS_SCHEMA }, required: ['repo', 'file'] },
   },
 ];
