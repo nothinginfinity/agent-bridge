@@ -1,6 +1,8 @@
 // ============================================================
-// afo-github-clone-mcp  v1.1.0
-// v1.1.0: adds create_repo tool + auto_create_repo in clone_repo_path
+// afo-github-clone-mcp  v1.2.0
+// v1.2.0: adds name_only_files — files where replacements apply
+//         only to lines starting with `name =` (e.g. wrangler.toml),
+//         leaving binding values, index names, db names untouched.
 //
 // Required bindings:
 //   GITHUB_TOKEN   (secret) — GitHub PAT with repo read+write
@@ -8,7 +10,7 @@
 // ============================================================
 
 const NAME    = 'afo-github-clone-mcp';
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -144,6 +146,9 @@ async function writeFile(env, owner, repo, path, content, branch, message) {
   };
 }
 
+// ── Replacement helpers ───────────────────────────────────────────────────────
+
+// Full replacement: apply to entire content
 function applyReplacements(content, replacements) {
   if (!Array.isArray(replacements) || !replacements.length) return content;
   let out = content;
@@ -152,6 +157,19 @@ function applyReplacements(content, replacements) {
     out = out.split(from).join(to ?? '');
   }
   return out;
+}
+
+// Name-only replacement: only replace on lines that start with `name =`
+// Leaves database_name, index_name, bucket_name, binding values etc. untouched.
+function applyNameOnlyReplacements(content, replacements) {
+  if (!Array.isArray(replacements) || !replacements.length) return content;
+  return content.split('\n').map(line => {
+    // Only touch lines like: name = "contractor-v005-dev"
+    if (/^\s*name\s*=/.test(line)) {
+      return applyReplacements(line, replacements);
+    }
+    return line;
+  }).join('\n');
 }
 
 // ── Tool implementations ──────────────────────────────────────────────────────
@@ -176,8 +194,10 @@ async function cloneRepoPath(args, env) {
   const dstRepo       = args.dst_repo;
   const dstPath       = args.dst_path   || srcPath;
   const dstBranch     = args.dst_branch || 'main';
-  const replacements  = args.replacements  || [];
-  const excludeGlobs  = args.exclude_files || [];
+  const replacements  = args.replacements   || [];
+  const excludeGlobs  = args.exclude_files  || [];
+  // Files where replacements only apply to `name =` lines. wrangler.toml always included.
+  const nameOnlyFiles = ['wrangler.toml', ...(args.name_only_files || [])];
   const commitMessage = args.commit_message || `clone: ${srcRepo}/${srcPath} → ${dstRepo}/${dstPath}`;
   const autoCreate    = args.auto_create_repo !== false;
 
@@ -208,10 +228,24 @@ async function cloneRepoPath(args, env) {
       const { content }  = await readFile(env, srcOwner, srcRepo, srcFilePath, srcBranch);
       const relativePath = srcFilePath.slice(srcPath.replace(/\/$/, '').length).replace(/^\//, '');
       const dstFilePath  = dstPath ? `${dstPath.replace(/\/$/, '')}/${relativePath}` : relativePath;
-      const newContent   = applyReplacements(content, replacements);
       const finalDstPath = applyReplacements(dstFilePath, replacements);
-      const writeResult  = await writeFile(env, dstOwner, dstRepo, finalDstPath, newContent, dstBranch, commitMessage);
-      results.push({ src: srcFilePath, dst: finalDstPath, action: writeResult.action, sha: writeResult.sha, commit: writeResult.commit_sha });
+
+      // For name_only_files, only replace on `name =` lines; otherwise full replacement
+      const filename   = srcFilePath.split('/').pop();
+      const nameOnly   = nameOnlyFiles.includes(filename);
+      const newContent = nameOnly
+        ? applyNameOnlyReplacements(content, replacements)
+        : applyReplacements(content, replacements);
+
+      const writeResult = await writeFile(env, dstOwner, dstRepo, finalDstPath, newContent, dstBranch, commitMessage);
+      results.push({
+        src:       srcFilePath,
+        dst:       finalDstPath,
+        mode:      nameOnly ? 'name_only' : 'full',
+        action:    writeResult.action,
+        sha:       writeResult.sha,
+        commit:    writeResult.commit_sha,
+      });
     } catch (e) {
       errors.push({ path: srcFilePath, error: e.message });
     }
@@ -224,6 +258,7 @@ async function cloneRepoPath(args, env) {
     dst:            `${dstOwner}/${dstRepo}:${dstPath}@${dstBranch}`,
     dst_url:        `https://github.com/${dstOwner}/${dstRepo}`,
     replacements:   replacements.length,
+    name_only_files: nameOnlyFiles,
     files_found:    toClone.length,
     files_cloned:   results.length,
     files_errored:  errors.length,
@@ -307,15 +342,16 @@ const TOOLS = [
   },
   {
     name: 'clone_repo_path',
-    description: 'Clone all files from a source repo directory into a destination repo. Auto-creates dst_repo if it does not exist (auto_create_repo defaults true). No file size limits.',
+    description: 'Clone all files from a source repo directory into a destination repo. Auto-creates dst_repo if needed. wrangler.toml is always treated as name_only (replacements apply only to `name =` lines, leaving binding values untouched). No file size limits.',
     inputSchema: {
       type: 'object',
       properties: {
         src_repo: { type: 'string' }, src_path: { type: 'string' }, src_owner: { type: 'string' }, src_branch: { type: 'string' },
         dst_repo: { type: 'string' }, dst_path: { type: 'string' }, dst_owner: { type: 'string' }, dst_branch: { type: 'string' },
-        replacements: REPLACEMENTS_SCHEMA,
-        exclude_files: { type: 'array', items: { type: 'string' } },
-        commit_message: { type: 'string' },
+        replacements:     REPLACEMENTS_SCHEMA,
+        exclude_files:    { type: 'array', items: { type: 'string' }, description: 'Filenames to skip entirely.' },
+        name_only_files:  { type: 'array', items: { type: 'string' }, description: 'Extra filenames where replacements apply only to `name =` lines. wrangler.toml is always included.' },
+        commit_message:   { type: 'string' },
         auto_create_repo: { type: 'boolean', description: 'Create dst_repo if it does not exist. Default: true.' },
       },
       required: ['src_repo', 'dst_repo'],
