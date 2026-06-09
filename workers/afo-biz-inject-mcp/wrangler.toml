@@ -5,9 +5,9 @@ workers_dev = true
 
 [vars]
 MCP_SERVER_NAME    = "afo-biz-inject-mcp"
-MCP_SERVER_VERSION = "0.1.0"
+MCP_SERVER_VERSION = "0.2.0"
 
-# Optional secrets — set via Cloudflare dashboard or:
+# Secrets — set via Cloudflare dashboard or:
 #   wrangler secret put CLOUDFLARE_ACCOUNT_ID
 #   wrangler secret put CLOUDFLARE_API_TOKEN
 #   wrangler secret put DEFAULT_D1_DATABASE_ID
