@@ -1,0 +1,10 @@
+name = "afo-github-clone-mcp"
+main = "src/worker.js"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+DEFAULT_OWNER = "nothinginfinity"
+
+# Secrets — add via Cloudflare dashboard or:
+#   wrangler secret put GITHUB_TOKEN
